@@ -19,8 +19,17 @@ DEFAULT_99N_DIR = BASE_DIR.parent / "99N"
 
 
 def _path_env(name, default):
+    """Absolute env path, or resolved against BASE_DIR when relative.
+
+    A relative ``DATA_DIR=../99N/data`` must mean the same thing no matter
+    which directory the bot was launched from, so it is anchored to the bot
+    itself rather than to ``os.getcwd()``.
+    """
     value = os.getenv(name)
-    return Path(os.path.expanduser(value)).resolve() if value else default
+    if not value:
+        return default
+    path = Path(os.path.expanduser(value))
+    return path if path.is_absolute() else (BASE_DIR / path).resolve()
 
 
 DATA_DIR = _path_env("DATA_DIR", DEFAULT_99N_DIR / "data")
