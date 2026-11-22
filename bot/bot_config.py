@@ -9,7 +9,12 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_99N_DIR = BASE_DIR.parent / "99N"
+
+# Snapshot and asset dirs shipping with the repo win over the sibling checkout:
+# a fresh clone has no ../99N, and defaulting to a path that does not exist made
+# every reader degrade to empty instead of reading the committed copy.
+DEFAULT_DATA_DIR = BASE_DIR / "data"
+DEFAULT_ASSET_DIR = BASE_DIR / "assets"
 
 try:
     from dotenv import load_dotenv
@@ -35,8 +40,8 @@ def _path_env(name, default):
     return path if path.is_absolute() else (BASE_DIR / path).resolve()
 
 
-DATA_DIR = _path_env("DATA_DIR", DEFAULT_99N_DIR / "data")
-ASSET_DIR = _path_env("ASSET_DIR", DEFAULT_99N_DIR / "assets")
+DATA_DIR = _path_env("DATA_DIR", DEFAULT_DATA_DIR)
+ASSET_DIR = _path_env("ASSET_DIR", DEFAULT_ASSET_DIR)
 CONFIG_DIR = _path_env("CONFIG_DIR", BASE_DIR / "config" / "guilds")
 
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")

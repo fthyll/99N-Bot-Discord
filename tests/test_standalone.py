@@ -29,6 +29,29 @@ class TestStandalone(unittest.TestCase):
         for key, value in values.items():
             self.assertFalse(Path(value).is_absolute(), key)
 
+    def test_defaults_need_no_env_file(self):
+        """A fresh clone has no .env; the defaults must still find the data."""
+        code = (
+            "import os;"
+            "os.environ.pop('DATA_DIR', None);"
+            "os.environ.pop('ASSET_DIR', None);"
+            "from bot import bot_config as c;"
+            "print(c.DATA_DIR);print(c.ASSET_DIR);"
+            "print(c.DATA_DIR.exists(), c.ASSET_DIR.exists())"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd="/tmp",
+            env={k: v for k, v in os.environ.items()
+                 if k not in ("DATA_DIR", "ASSET_DIR")} | {"PYTHONPATH": str(ROOT)},
+            capture_output=True, text=True,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        lines = out.stdout.strip().splitlines()
+        self.assertEqual(lines[0], str(ROOT / "data"))
+        self.assertEqual(lines[1], str(ROOT / "assets"))
+        self.assertEqual(lines[2], "True True")
+
     def test_runs_from_an_unrelated_cwd(self):
         """load_dotenv() and _path_env() must both ignore the working directory."""
         code = (
