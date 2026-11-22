@@ -25,9 +25,30 @@ def raid_member_rows(raid):
     return rows
 
 
-def raid_absentees(raid):
-    """Members who made no raid attack."""
-    return [r for r in raid_member_rows(raid) if r["attacks"] == 0]
+def raid_absentees(raid, members=None):
+    """Members who made no raid attack.
+
+    ``raid['members']`` only lists members who attacked at least once — the
+    ones who never raided are absent from it entirely, so the clan roster has
+    to be diffed in. Passing ``members`` doubles as the full clan list.
+    """
+    attacked = {r["tag"] for r in raid_member_rows(raid) if r["attacks"] > 0}
+    if not members:
+        return [r for r in raid_member_rows(raid) if r["attacks"] == 0]
+    rows = []
+    for member in members:
+        tag = member.get("tag")
+        if tag and tag not in attacked:
+            rows.append({
+                "name": member.get("name", "?"),
+                "tag": tag,
+                "attacks": 0,
+                "limit": None,
+                "bonus": None,
+                "loot": 0,
+            })
+    rows.sort(key=lambda r: r["name"].lower())
+    return rows
 
 
 def build_raid_embed(raid):
@@ -74,8 +95,8 @@ def build_raid_members_embed(raid):
     return embed
 
 
-def build_absentees_embed(raid):
-    absent = raid_absentees(raid)
+def build_absentees_embed(raid, members=None):
+    absent = raid_absentees(raid, members)
     embed = discord.Embed(title="💤 Raid absentees", color=RED)
     if not absent:
         embed.description = "Everyone raided this weekend."
@@ -100,7 +121,7 @@ class RaidCog(commands.Cog, name="raid"):
 
     @commands.hybrid_command(name="raidabsent", description="Members who made no raid attack")
     async def raidabsent(self, ctx):
-        await ctx.send(embed=build_absentees_embed(self.reader.raid()))
+        await ctx.send(embed=build_absentees_embed(self.reader.raid(), self.reader.members()))
 
 
 async def setup(bot):

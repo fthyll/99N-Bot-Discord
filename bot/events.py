@@ -56,11 +56,96 @@ def _reuse(builder, payload):
     return [bot_embeds.dict_to_embed(raw)]
 
 
+# -- fallbacks -------------------------------------------------------------
+# The scraper package is optional (the bot runs from a checkout that may not
+# have it). Without these, five events would silently produce nothing at all.
+
+def _war_preview_fallback(war):
+    clan = war.get("clan") or {}
+    opponent = war.get("opponent") or {}
+    return _simple(
+        "⚔️ War matched",
+        f"**{clan.get('name', 'Clan')}** vs **{opponent.get('name', '?')}**\n"
+        f"Size: {war.get('teamSize', '?')}v{war.get('teamSize', '?')}\n"
+        f"Starts {fmt.coc_time(war.get('startTime'))}",
+        0x5865F2,
+    )
+
+
+def _war_result_fallback(war):
+    clan = war.get("clan") or {}
+    opponent = war.get("opponent") or {}
+    ours = (clan.get("stars") or 0, clan.get("destructionPercentage") or 0)
+    theirs = (opponent.get("stars") or 0, opponent.get("destructionPercentage") or 0)
+    if ours > theirs:
+        title, color = "🏆 War won", 0x3BA55D
+    elif ours < theirs:
+        title, color = "💀 War lost", 0xED4245
+    else:
+        title, color = "🤝 War drawn", 0x95A5A6
+    return _simple(
+        title,
+        f"**{clan.get('name', 'Clan')}** {ours[0]}★ {ours[1]:.1f}% "
+        f"vs **{opponent.get('name', '?')}** {theirs[0]}★ {theirs[1]:.1f}%\n"
+        f"Attacks: {clan.get('attacks', 0)} vs {opponent.get('attacks', 0)}",
+        color,
+    )
+
+
+def _raid_start_fallback(raid):
+    return _simple(
+        "🏰 Raid weekend started",
+        f"Ends {fmt.coc_time(raid.get('endTime'))}.\n"
+        f"{len(raid.get('members') or [])} members are already raiding.",
+        0xF5B942,
+    )
+
+
+def _raid_summary_fallback(raid):
+    return _simple(
+        "🏰 Raid weekend finished",
+        f"**Capital loot**: {fmt.num(raid.get('capitalTotalLoot', 0))}\n"
+        f"**Districts destroyed**: {raid.get('enemyDistrictsDestroyed', 0)}\n"
+        f"**Attacks**: {fmt.num(raid.get('totalAttacks', 0))}",
+        0xF5B942,
+    )
+
+
+def _membership_fallback(joined, left, total):
+    lines = []
+    if joined:
+        lines.append("**Joined:** " + ", ".join(joined))
+    if left:
+        lines.append("**Left:** " + ", ".join(left))
+    return _simple(
+        "👥 Roster changed",
+        "\n".join(lines) + f"\nNow **{total}/50** members.",
+        0x5865F2,
+    )
+
+
+def _donation_reset_fallback(before, totals, top):
+    delta = (totals.get("donations") or 0) - (before.get("total") or 0)
+    lines = [
+        f"{i + 1}. **{m.get('name', '?')}** — {fmt.num(m.get('donations', 0))}"
+        for i, m in enumerate(top)
+    ] or ["—"]
+    return _simple(
+        "🎁 Donation season reset",
+        f"Last season the clan donated **{fmt.num(before.get('total', 0))}** "
+        f"(received {fmt.num(before.get('received', 0))}).\n"
+        f"A new season starts now ({delta:+,} vs last close).\n" + "\n".join(lines),
+        0x3BA55D,
+    )
+
+
 def _war_preparation(ctx, prev):
     war = ctx["war"]
-    if war.get("state") == "preparation" and not prev.get("war"):
-        return _reuse("war_preview", war)
-    return []
+    if war.get("state") != "preparation":
+        return []
+    if prev.get("war", {}).get("preparation_key") == war.get("startTime"):
+        return []
+    return _reuse("war_preview", war) or [_war_preview_fallback(war)]
 
 
 def _war_result(ctx, prev):
@@ -70,7 +155,7 @@ def _war_result(ctx, prev):
     marker = prev.get("war", {})
     if marker.get("state") == "warEnded" and marker.get("key") == war.get("startTime"):
         return []
-    return _reuse("war_result", war)
+    return _reuse("war_result", war) or [_war_result_fallback(war)]
 
 
 def _war_ending_soon(ctx, prev):
@@ -128,14 +213,14 @@ def _war_cleanup(ctx, prev):
 def _raid_start(ctx, prev):
     raid = ctx["raid"]
     if raid.get("state") == "ongoing" and prev.get("raid", {}).get("state") != "ongoing":
-        return _reuse("raid_start", raid)
+        return _reuse("raid_start", raid) or [_raid_start_fallback(raid)]
     return []
 
 
 def _raid_summary(ctx, prev):
     raid = ctx["raid"]
     if raid.get("state") == "ended" and prev.get("raid", {}).get("state") != "ended":
-        return _reuse("raid_summary", raid)
+        return _reuse("raid_summary", raid) or [_raid_summary_fallback(raid)]
     return []
 
 
@@ -168,7 +253,9 @@ def _clan_roster(ctx, prev):
     left = sorted(previous - set(members))
     if not (joined or left):
         return []
-    return _reuse("membership_change", (joined, left, len(members)))
+    return _reuse("membership_change", (joined, left, len(members))) or [
+        _membership_fallback(joined, left, len(members))
+    ]
 
 
 def _clan_donation_reset(ctx, prev):
@@ -179,20 +266,24 @@ def _clan_donation_reset(ctx, prev):
         "received": sum((m.get("donationsReceived") or 0) for m in members.values()),
     }
     before = prev.get("clan", {}).get("donations")
-    if not before:
+    if not before or not before.get("total"):
+        return []
+    stamp = ctx["now"].strftime("%Y%m%d")
+    if prev.get("clan", {}).get("donation_reset") == stamp:
         return []
     # Counters reset when the league season rolls over: the total collapses.
-    if totals["donations"] >= (before.get("total") or 1) * 0.5:
-        return []
-    if before.get("lastSeen") == ctx["now"].strftime("%Y%m%d"):
+    if totals["donations"] >= before["total"] * 0.5:
         return []
     top = sorted(members.values(), key=lambda m: m.get("donations") or 0, reverse=True)[:3]
-    return _reuse("donation_reset", (before, totals, top))
+    return _reuse("donation_reset", (before, totals, top)) or [
+        _donation_reset_fallback(before, totals, top)
+    ]
 
 
 def _clan_donation_weekly(ctx, prev):
     now = ctx["now"]
-    # Monday, 05:00 UTC is when the CoC league week rolls over.
+    # Monday, 05:00 UTC is when the CoC league week rolls over. The marker is
+    # what keeps this to one message; the hour alone spans 60 minutes of ticks.
     if not (now.weekday() == 0 and now.hour == 5):
         return []
     stamp = now.strftime("%Y%m%d")
@@ -208,6 +299,8 @@ def _clan_donation_weekly(ctx, prev):
 
 
 def _clan_inactive(ctx, prev):
+    # The marker is written only when the message is delivered, so the guard is
+    # a plain "already told them today" check, not a state-shape guess.
     stamp = ctx["now"].strftime("%Y%m%d")
     if prev.get("clan", {}).get("inactive") == stamp:
         return []

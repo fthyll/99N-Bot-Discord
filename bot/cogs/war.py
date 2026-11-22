@@ -26,18 +26,24 @@ def attacks_left(war):
 
 
 def attack_summary(war):
-    """One row per attacking member: name, TH, attacks, best star hit."""
+    """One row per attacking member: name, TH, attacks used, best star hit.
+
+    ``member['attacks']`` is the list of attacks *we* made; ``opponentAttacks``
+    is how many times the enemy hit that base, so it must never be used as an
+    attack counter.
+    """
     clan = (war or {}).get("clan") or {}
     per_member = int((war or {}).get("attacksPerMember") or 2)
     rows = []
     for member in clan.get("members") or []:
-        best = member.get("bestOpponentAttack") or {}
+        made = member.get("attacks") or []
+        best = max(made, key=lambda a: (a.get("stars") or 0), default=None) or {}
         rows.append({
             "name": member.get("name", "?"),
             "tag": member.get("tag", ""),
             "th": member.get("townhallLevel"),
             "position": member.get("mapPosition"),
-            "attacks": int(member.get("opponentAttacks") or 0),
+            "attacks": len(made),
             "max_attacks": per_member,
             "stars": best.get("stars"),
             "destruction": best.get("destructionPercentage"),
@@ -139,12 +145,16 @@ def build_lineup_embed(war):
 
 
 def build_warlog_embed(items, limit=10):
+    """Most recent ``limit`` wars, newest first.
+    ``warlog.items`` is newest-first (items[0] is the last war played), so the
+    head of the list is what the user wants, not the tail.
+    """
     embed = discord.Embed(title="📜 Recent wars", color=GREY)
     if not items:
         embed.description = "No war log available."
         return embed
     lines = []
-    for item in items[-limit:][::-1]:
+    for item in items[:limit]:
         clan = item.get("clan") or {}
         opponent = item.get("opponent") or {}
         result = str(item.get("result", "?")).upper()
@@ -170,8 +180,9 @@ def build_warstats_embed(items):
     draws = len(finished) - wins - losses
     rate = wins / len(finished) * 100
 
+    # items are newest-first, so a streak counts from the head of the list.
     streak = 0
-    for item in reversed(finished):
+    for item in finished:
         if item.get("result") == "win":
             streak += 1
         else:

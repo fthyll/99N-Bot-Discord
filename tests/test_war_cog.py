@@ -20,9 +20,11 @@ WAR = {
         "destructionPercentage": 62.5,
         "members": [
             {"tag": "#A", "name": "Alpha", "townhallLevel": 18, "mapPosition": 12,
-             "opponentAttacks": 1, "bestOpponentAttack": None},
+             "opponentAttacks": 1,
+             "attacks": [{"defenderTag": "#X", "stars": 3, "destructionPercentage": 100}],
+             "bestOpponentAttack": None},
             {"tag": "#B", "name": "Beta", "townhallLevel": 8, "mapPosition": 5,
-             "opponentAttacks": 0, "bestOpponentAttack": None},
+             "opponentAttacks": 0, "attacks": [], "bestOpponentAttack": None},
         ],
     },
     "opponent": {

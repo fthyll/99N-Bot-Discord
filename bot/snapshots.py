@@ -8,7 +8,8 @@ Two index conventions live in the archive and they disagree:
 
 * ``war_stats`` / ``raid_stats`` indices are oldest-first — the last entry is
   the newest snapshot.
-* ``clan_stats`` index is newest-first — the *first* entry is the newest.
+* ``clan_stats`` / ``player_stats`` indices are newest-first — the *first*
+  entry is the newest.
 
 ``latest()`` honours that difference instead of sorting by mtime, because a
 fresh checkout or a restored backup gives every file the same timestamp.
@@ -17,6 +18,9 @@ fresh checkout or a restored backup gives every file the same timestamp.
 import json
 import os
 from datetime import datetime, timezone
+
+# Folder whose *_index.json lists the newest snapshot first.
+NEWEST_FIRST = frozenset({"clan_stats", "player_stats"})
 
 
 def _parse_iso(value):
@@ -62,12 +66,7 @@ class SnapshotReader:
         """Newest snapshot in ``folder`` as a dict ({} when there is none)."""
         names = self.index(folder)
         if names:
-            if folder == "clan_stats":
-                # Newest-first index.
-                name = names[0]
-            else:
-                # Oldest-first index.
-                name = names[-1]
+            name = names[0] if folder in NEWEST_FIRST else names[-1]
             data = self._read_json(self._path(folder, name))
             if data is not None:
                 return data

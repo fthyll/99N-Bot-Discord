@@ -45,7 +45,7 @@ def build_clan_embed(clan):
     return embed
 
 
-def build_roster_embed(members, role=None, sort_key=None):
+def build_roster_embed(members, role=None, sort_key=None, limit=50):
     members = members or []
     rows = list(members)
     if role:
@@ -57,16 +57,21 @@ def build_roster_embed(members, role=None, sort_key=None):
             key=lambda m: (m.get(sort_key) is None, m.get(sort_key) or 0),
             reverse=(sort_key in ("donations", "trophies", "warStars", "builderBaseTrophies")),
         )
+    shown = rows[:max(1, min(int(limit or 50), 50))]
     lines = []
-    for m in rows[:50]:
+    for m in shown:
         lines.append(
             f"**{m.get('name', '?')}** `{m.get('tag', '')}` — TH{int(m.get('townHallLevel') or 0)}, "
             f"🏆 {num(m.get('trophies', 0))}, 🎁 {num(m.get('donations', 0))} (got {num(m.get('donationsReceived', 0))})"
         )
     embed = discord.Embed(title="👥 Roster", color=GOLD)
     embed.description = truncate("\n".join(lines)) if lines else "No members found."
-    embed.add_field(name="Shown", value=str(len(lines)), inline=True)
+    embed.add_field(name="Shown", value=f"{len(lines)}/{len(rows)}", inline=True)
     return embed
+
+
+METRICS = ("donations", "trophies", "warStars", "builderBaseTrophies", "donationsReceived")
+ROLES = ("member", "elder", "coLeader", "leader")
 
 
 def top_rows(members, metric, limit=10):
@@ -76,12 +81,13 @@ def top_rows(members, metric, limit=10):
 
 
 def inactive_members(members, days=7):
-    """Members with zero donations in the last ``days`` snapshots."""
-    threshold = int((days or 7) * 1440)
-    return [
-        m for m in members or []
-        if int(m.get("donations") or 0) < threshold
-    ]
+    """Members with zero donations in the newest snapshot.
+
+    ``donations`` is a per-season counter reset every month, not a timestamp,
+    so it cannot express "N days idle" — the old ``days * 1440`` threshold
+    flagged every member in the clan.
+    """
+    return [m for m in members or [] if int(m.get("donations") or 0) == 0]
 
 
 class ClanCog(commands.Cog, name="clan"):
@@ -105,9 +111,12 @@ class ClanCog(commands.Cog, name="clan"):
         key = {"donations": "donations", "trophies": "trophies"}.get(
             (sort or "").lower(), None
         )
-        embed = build_roster_embed(members, role=role, sort_key=key)
-        if limit and limit > 50:
-            limit = 50
+        if role and str(role).lower() not in ROLES:
+            await ctx.send(
+                f"❌ Unknown role `{role}`. Pick one of: {', '.join(ROLES)}."
+            )
+            return
+        embed = build_roster_embed(members, role=role, sort_key=key, limit=limit)
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="top", description="Top N members by a metric")
@@ -117,11 +126,19 @@ class ClanCog(commands.Cog, name="clan"):
         metric: str = "donations",
         limit: int = 10,
     ):
+        if metric not in METRICS:
+            await ctx.send(
+                f"❌ Unknown metric `{metric}`. Pick one of: {', '.join(METRICS)}."
+            )
+            return
         members = self.reader.members()
         rows = top_rows(members, metric, limit=limit)
-        lines = [f"**{i + 1}.** {m.get('name', '?')} — {m.get('tag', '')}" for i, m in enumerate(rows)]
-        embed = discord.Embed(title="🏆 Top members", color=GOLD)
-        embed.description = truncate("\n".join(lines))
+        lines = [
+            f"**{i + 1}.** {m.get('name', '?')} — {num(m.get(metric, 0))}"
+            for i, m in enumerate(rows)
+        ]
+        embed = discord.Embed(title=f"🏆 Top by {metric}", color=GOLD)
+        embed.description = truncate("\n".join(lines)) or "No members found."
         await ctx.send(embed=embed)
 
 
