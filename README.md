@@ -1,0 +1,137 @@
+# 99N Bot Discord
+
+Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. Bot ini berjalan tanpa ketergantungan API eksternal langsung saat melayani chat/notifikasi, melainkan membaca data snapshot JSON yang diproduksi secara berkala oleh scraper di repo [99N](https://github.com/fthyll/99N) serta menyertakan ilustrasi Town Hall asli (`assets/Town_Hall<level>.webp`).
+
+---
+
+## ⚡ Fitur Utama
+
+- **Zero-API Latency**: Membaca snapshot JSON lokal (`clan_stats`, `war_stats`, `raid_stats`, `player_stats`) sehingga respons perintah instan.
+- **Dukungan Perintah Ganda**: Semua perintah tersedia sebagai pesan prefix (default: `!`) dan Discord Application Slash Commands (`/`).
+- **Rich Embeds & Gambar Town Hall**: Perintah `!member` dan `!th` menyertakan gambar WebP resmi Town Hall (level 1 sampai level 19) langsung di kartu Discord.
+- **Notifikasi Otomatis (14 Event)**: Background dispatcher mengecek perubahan snapshot setiap 5 menit dengan anti-spam cerdas (state tersimpan terpisah dari config).
+- **Multi-Guild & Quiet Hours**: Konfigurasi per server tersimpan di `config/guilds/<guild_id>.json` dengan dukungan jam tenang malam hari.
+
+---
+
+## 📦 Instalasi & Menjalankan Bot
+
+### 1. Prasyarat
+- Python 3.9+
+- Pip
+- Folder repo `99N` berada sejajar di direktori yang sama (`../99N`) atau arahkan via environment variable.
+
+### 2. Setup Virtual Environment & Dependencies
+```bash
+cd "99N Bot Discord"
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Konfigurasi Environment (`.env`)
+Salin file `.env.example` ke `.env` dan lengkapi token bot:
+```bash
+cp .env.example .env
+```
+
+Isi variabel di `.env`:
+```env
+DISCORD_BOT_TOKEN=your_bot_token_here
+BOT_PREFIX=!
+DISCORD_GUILD_ID=                  # Opsional: ID server untuk instant slash sync saat dev
+DATA_DIR=../99N/data               # Folder data snapshot dari scraper
+ASSET_DIR=../99N/assets            # Folder asset gambar Town Hall WebP
+CONFIG_DIR=./config/guilds         # Folder penyimpanan konfigurasi per guild
+BOT_TIMEZONE=Asia/Jakarta
+```
+
+### 4. Menjalankan Bot
+```bash
+python3 bot.py
+```
+
+---
+
+## 📋 Daftar Perintah
+
+### 🏛️ Clan Commands
+| Prefix | Slash | Deskripsi |
+|---|---|---|
+| `!clan` | `/clan` | Menampilkan ringkasan profil clan (badge, level, piala, rekor war). |
+| `!roster [sort] [role]` | `/roster` | Daftar anggota clan dengan filter role (`elder`, `coLeader`, dll) & sorting (`trophies`, `donations`, `th`). |
+| `!top [metric] [limit]` | `/top` | Peringkat anggota teratas berdasarkan piala, donasi, atau level TH. |
+
+### 👤 Player Commands
+| Prefix | Slash | Deskripsi |
+|---|---|---|
+| `!member <nama/tag>` | `/member` | Kartu profil lengkap pemain beserta gambar level Town Hall. |
+| `!th <level>` | `/th` | Melihat preview gambar Town Hall level 1 hingga 19. |
+| `!topplayers [metric]` | `/topplayers` | Leaderboard pemain clan berdasarkan war stars atau donasi capital. |
+| `!trend <nama/tag> [metric]` | `/trend` | Grafik tren 14 hari terakhir pemain (piala, donasi, war stars). |
+| `!compare <nama1> <nama2>` | `/compare` | Membandingkan statistik 2 pemain secara berdampingan. |
+| `!cwl` | `/cwl` | Klasemen dan status Clan War League terkini. |
+| `!inactive` | `/inactive` | Menampilkan anggota yang belum melakukan donasi di snapshot ini. |
+
+### ⚔️ War Commands
+| Prefix | Slash | Deskripsi |
+|---|---|---|
+| `!war` | `/war` | Status live war (bintang, persentase damage, sisa waktu). |
+| `!attacks` | `/attacks` | Daftar anggota yang masih memiliki sisa serangan war. |
+| `!lineup` | `/lineup` | Perbandingan susunan base kita vs musuh di map war. |
+| `!warlog` | `/warlog` | Riwayat hasil war sebelumnya. |
+| `!warstats` | `/warstats` | Statistik keseluruhan (win rate, rekor streak, rata-rata bintang). |
+
+### 🏕️ Raid Weekend Commands
+| Prefix | Slash | Deskripsi |
+|---|---|---|
+| `!raid` | `/raid` | Ringkasan Raid Weekend (total medali, raid attack, gold dijarah). |
+| `!raidmembers` | `/raidmembers` | Rincian serangan dan hasil Capital Gold tiap anggota. |
+| `!raidabsent` | `/raidabsent` | Daftar anggota yang belum menyerang di Raid Weekend. |
+
+### ⚙️ Admin & Notification Management
+| Perintah | Deskripsi |
+|---|---|
+| `/notif list` | Menampilkan status aktif/nonaktif ke-14 notifikasi event. |
+| `/notif set <event> <on/off>` | Mengaktifkan atau menonaktifkan event notifikasi tertentu. |
+| `/notif channel <event\|all> [#ch]` | Mengarahkan tujuan pesan notifikasi ke channel tertentu. |
+| `/notif ping <event\|all> [@role]` | Mengatur role yang dimention saat event terpicu. |
+| `/notif quiet [start] [end] [on/off]` | Mengatur jam tenang agar bot tidak mengirim notifikasi di malam hari. |
+| `/notif test <event>` | Menguji coba pengiriman kartu embed event ke channel saat ini. |
+| `/notif reset` | Menghapus state anti-spam agar notifikasi lama dapat dikirim ulang jika perlu. |
+| `!broadcast <pesan> [#ch]` | Mengirim pengumuman resmi dari clan/admin ke channel. |
+| `!config` | Memeriksa konfigurasi server yang sedang aktif. |
+| `!freshness` | Memeriksa usia data snapshot scraper (deteksi data basi). |
+
+---
+
+## 🔔 Notifikasi Otomatis (14 Event)
+
+1. `war.preparation`: Saat musuh war ditemukan & masa persiapan dimulai.
+2. `war.result`: Hasil akhir war (Menang / Kalah / Seri) diumumkan.
+3. `war.ending_soon`: Peringatan sisa waktu war < 2 jam dengan serangan belum selesai.
+4. `war.attack_reminder`: Pengingat bagi anggota yang masih memiliki tiket serangan.
+5. `war.cleanup`: Rekap evaluasi serangan anggota setelah war selesai.
+6. `raid.start`: Pembukaan Raid Weekend Clan Capital.
+7. `raid.summary`: Rekap perolehan medali dan gold saat Raid Weekend berakhir.
+8. `raid.reminder`: Pengingat serangan Raid Weekend bagi yang belum selesai.
+9. `clan.roster`: Pengumuman anggota baru bergabung atau keluar dari clan.
+10. `clan.donation_reset`: Notifikasi reset season donasi bulanan.
+11. `clan.donation_weekly`: Rekap mingguan pendonor tertinggi di clan.
+12. `clan.inactive`: Notifikasi anggota tidak aktif yang belum donasi.
+13. `cwl.round`: Pergantian hari/ronde pertempuran di Clan War League.
+14. `system.stale`: Peringatan otomatis jika data scraper macet atau tidak terupdate >24 jam.
+
+---
+
+## 🧪 Pengujian Unit Test
+
+Proyek ini dilengkapi dengan 49 unit test komprehensif menggunakan standard library `unittest`:
+```bash
+python3 -m unittest discover -s tests -p "test_*.py" -t .
+```
+
+---
+
+## 📄 Lisensi
+MIT License © 2026 99N Clan

@@ -1,0 +1,81 @@
+# Changelog
+
+All notable changes to the **99N Bot Discord** project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2026-11-22
+
+### Added
+- **Core Architecture & Runner**:
+  - `bot.py` entrypoint supporting both prefix (`!`) and Discord Application Slash commands.
+  - Runtime configuration module (`bot.bot_config`) with environment variable parsing and fallback paths to sibling `../99N` project data & assets.
+  - Town Hall WebP image locator (`Town_Hall1.webp` to `Town_Hall19.webp`) for inline embed attachments.
+  - Multi-cog modular structure: Clan, Player, War, Raid, and Admin.
+
+- **Snapshot Reader (`bot.snapshots`)**:
+  - Zero-API snapshot reader parsing local JSON dumps in `data/`:
+    - `clan_stats/members_*.json` and `clan_stats_index.json`
+    - `war_stats/war_*.json` and `war_stats_index.json`
+    - `raid_stats/raid_*.json` and `raid_stats_index.json`
+    - `player_stats/players_*.json` and `player_trends.json`
+    - `meta.json`, `sync_war.json`, and `sync_raid.json`
+  - Helper functions for finding latest entries, calculating snapshot freshness, and member lookups.
+
+- **Commands (Prefix & Hybrid Slash)**:
+  - **Clan**:
+    - `!clan` / `/clan`: Overview card with badge, level, trophies, war log stats, and member counts.
+    - `!roster` / `/roster`: Full member roster with sorting (`trophies`, `donations`, `th`, `role`) and role filters (`elder`, `coLeader`, `leader`, `member`).
+    - `!top` / `/top`: Top N members ranked by trophies, donations, or Town Hall level.
+  - **Player**:
+    - `!member` / `/member`: Rich profile card attaching the exact Town Hall level WebP illustration, hero levels, trophies, and donations.
+    - `!th` / `/th`: Inspection card showing the Town Hall image for levels 1–19.
+    - `!topplayers` / `/topplayers`: Clan leaderboard by war stars or capital contributions.
+    - `!trend` / `/trend`: Historical 14-day metric trend for a player.
+    - `!compare` / `/compare`: Side-by-side comparison between two clan members.
+    - `!cwl` / `/cwl`: Clan War League season status and standings table.
+    - `!inactive` / `/inactive`: List of members with 0 donations in the current snapshot cycle.
+  - **War**:
+    - `!war` / `/war`: Active or most recent war scorecard with stars, destruction %, and time remaining.
+    - `!attacks` / `/attacks`: Roster of clan members who have not used their war attacks.
+    - `!lineup` / `/lineup`: War map lineup comparison by base position.
+    - `!warlog` / `/warlog`: Historical list of past war outcomes.
+    - `!warstats` / `/warstats`: Overall clan war performance (win rate, war streak, average stars).
+  - **Raid**:
+    - `!raid` / `/raid`: Summary of the active or most recent Capital Raid Weekend (medals, attacks, capital gold looted).
+    - `!raidmembers` / `/raidmembers`: Detailed breakdown of each member's raid attacks and gold earned.
+    - `!raidabsent` / `/raidabsent`: Members who contributed 0 attacks during Raid Weekend.
+  - **Admin & Diagnostics**:
+    - `/notif list`: List all 14 notification events and their active status.
+    - `/notif set <event> <on|off>`: Toggle individual notification events.
+    - `/notif channel <event|all> [#channel]`: Route notifications to specific Discord channels.
+    - `/notif ping <event|all> [@role]`: Set role mentions for notification events.
+    - `/notif quiet [start] [end] [enabled]`: Configure midnight quiet hours.
+    - `/notif test <event>`: Send a sample event card.
+    - `/notif reset`: Clear anti-spam runtime state to allow re-announcing.
+    - `!broadcast` / `/broadcast`: Moderator announcement broadcast embed.
+    - `!config` / `/config`: Display current guild configuration and quiet hours.
+    - `!freshness` / `/freshness`: Check timestamp and age in hours of the underlying scraper data.
+
+- **Notification Engine (`bot.notifier` & `bot.events`)**:
+  - Background asynchronous dispatcher polling data snapshots every 5 minutes.
+  - Decoupled guild configuration (`<guild>.json`) and runtime anti-spam state (`<guild>.state.json`).
+  - Native integration with 14 event triggers:
+    1. `war.preparation`: War opponent matched and preparation day opened.
+    2. `war.result`: Final war outcome (Victory / Defeat / Tie).
+    3. `war.ending_soon`: War ending in less than 2 hours with attacks pending.
+    4. `war.attack_reminder`: Warning for members with remaining attacks.
+    5. `war.cleanup`: Post-war attack accountability summary.
+    6. `raid.start`: Capital Raid Weekend opened.
+    7. `raid.summary`: Raid Weekend concluded with total medals and loot.
+    8. `raid.reminder`: Raid Weekend ending warning for unused attacks.
+    9. `clan.roster`: Member join / leave detections.
+    10. `clan.donation_reset`: Monthly season reset detection.
+    11. `clan.donation_weekly`: Weekly donation standings report.
+    12. `clan.inactive`: Warning for zero-donation members.
+    13. `cwl.round`: CWL round change or war day transition.
+    14. `system.stale`: Automated watchdog alerting if scraper data is overdue (>24h).
+
+- **Automated Test Suite**:
+  - 49 unit tests covering all cogs, embed builders, configuration store, snapshot reader, event triggers, and the notifier dispatcher (`python3 -m unittest discover tests`).
