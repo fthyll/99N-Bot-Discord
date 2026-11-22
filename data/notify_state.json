@@ -1,11 +1,11 @@
 {
     "clan": {
         "donations": {
-            "lastSeen": "20261115",
-            "received": 1257,
-            "total": 1227
+            "lastSeen": "20261122",
+            "received": 3063,
+            "total": 3033
         },
-        "lastSnapshot": "members_20261115.json",
+        "lastSnapshot": "members_20261122.json",
         "memberTags": [
             "#88GLRP9LQ",
             "#9090VYJLJ",
@@ -83,6 +83,10 @@
         "20261113T070000.000Z": {
             "loot": 387131,
             "state": "ongoing"
+        },
+        "20261120T070000.000Z": {
+            "loot": 422624,
+            "state": "ongoing"
         }
     },
     "war": {
@@ -124,6 +128,16 @@
         "20261115T024959.000Z": {
             "clanStars": 44,
             "opponentStars": 45,
+            "state": "warEnded"
+        },
+        "20261117T111058.000Z": {
+            "clanStars": 60,
+            "opponentStars": 57,
+            "state": "warEnded"
+        },
+        "20261120T194506.000Z": {
+            "clanStars": 104,
+            "opponentStars": 103,
             "state": "warEnded"
         }
     }
