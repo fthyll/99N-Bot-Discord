@@ -1,21 +1,24 @@
 """Runtime configuration for the bot, read from the environment / .env.
 
-Paths default to the sibling ``99N`` checkout so the bot reads the exact
-snapshots the dashboard serves, and the exact Town Hall assets the frontend
-uses (``assets/Town_Hall<level>.webp``).
+The snapshots and Town Hall art are copied into this repo, so a plain checkout
+runs without the 99N dashboard beside it. Set ``DATA_DIR``/``ASSET_DIR`` to
+point at the live scraper output instead of the committed copy.
 """
 
 import os
 from pathlib import Path
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:  # dotenv is optional; plain env vars still work
-    pass
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_99N_DIR = BASE_DIR.parent / "99N"
+
+try:
+    from dotenv import load_dotenv
+    # Anchor to the bot's own .env: the default search walks up from the cwd, so
+    # launching from another directory silently skipped the file and every
+    # setting fell back to its default.
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:  # dotenv is optional; plain env vars still work
+    pass
 
 
 def _path_env(name, default):

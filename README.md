@@ -19,7 +19,8 @@ Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. B
 ### 1. Prasyarat
 - Python 3.9+
 - Pip
-- Folder repo `99N` berada sejajar di direktori yang sama (`../99N`) atau arahkan via environment variable.
+
+Tidak perlu checkout `99N` di sebelah repo ini: snapshot JSON (`data/`) dan asset Town Hall (`assets/`) sudah ikut di dalam repo.
 
 ### 2. Setup Virtual Environment & Dependencies
 ```bash
@@ -30,7 +31,6 @@ pip install -r requirements.txt
 ```
 
 ### 3. Konfigurasi Environment (`.env`)
-Salin file `.env.example` ke `.env` dan lengkapi token bot:
 ```bash
 cp .env.example .env
 ```
@@ -40,16 +40,25 @@ Isi variabel di `.env`:
 DISCORD_BOT_TOKEN=your_bot_token_here
 BOT_PREFIX=!
 DISCORD_GUILD_ID=                  # Opsional: ID server untuk instant slash sync saat dev
-DATA_DIR=../99N/data               # Folder data snapshot dari scraper
-ASSET_DIR=../99N/assets            # Folder asset gambar Town Hall WebP
+DATA_DIR=./data                    # Snapshot JSON yang ikut di repo ini
+ASSET_DIR=./assets                 # Asset WebP Town Hall yang ikut di repo ini
 CONFIG_DIR=./config/guilds         # Folder penyimpanan konfigurasi per guild
 BOT_TIMEZONE=Asia/Jakarta
 ```
+
+Arahkan `DATA_DIR`/`ASSET_DIR` ke checkout `99N` (`../99N/data`, `../99N/assets`) bila ingin membaca data scraper terbaru, bukan salinan yang di-commit.
 
 ### 4. Menjalankan Bot
 ```bash
 python3 bot.py
 ```
+
+### 5. Menyegarkan Snapshot
+`data/` dan `assets/` sudah di-commit agar bot langsung jalan setelah clone. Untuk menarik snapshot terbaru dari repo scraper:
+```bash
+cp -R ../99N/data/. ./data/ && cp -R ../99N/assets/. ./assets/
+```
+Commit hasilnya bila ingin data terbaru ikut tersimpan di repo ini.
 
 ---
 
@@ -126,7 +135,7 @@ python3 bot.py
 
 ## 🧪 Pengujian Unit Test
 
-Proyek ini dilengkapi dengan 49 unit test komprehensif menggunakan standard library `unittest`:
+Proyek ini dilengkapi dengan 78 unit test komprehensif menggunakan standard library `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```
