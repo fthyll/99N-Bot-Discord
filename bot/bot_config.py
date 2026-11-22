@@ -29,7 +29,7 @@ except ImportError:  # dotenv is optional; plain env vars still work
 def _path_env(name, default):
     """Absolute env path, or resolved against BASE_DIR when relative.
 
-    A relative ``DATA_DIR=../99N/data`` must mean the same thing no matter
+    A relative ``DATA_DIR=./data`` must mean the same thing no matter
     which directory the bot was launched from, so it is anchored to the bot
     itself rather than to ``os.getcwd()``.
     """

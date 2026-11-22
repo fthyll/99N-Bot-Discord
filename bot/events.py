@@ -5,32 +5,19 @@ function of ``(ctx, prev)`` returning a list of embeds — empty means nothing t
 send this tick. The dispatcher owns the state file, so triggers never mutate
 anything and are cheap to unit-test.
 
-The 8 events that already had a webhook builder reuse
-``scrapers/notifier/embeds.py`` and only convert the dict to a
-``discord.Embed``; the remaining 6 build their card inline.
+The embed builders that used to be imported from the 99N scraper checkout are
+vendored in ``bot/notifier_embeds.py`` (zero imports, 5 KB), so this repo has no
+filesystem dependency on a sibling checkout. The inline fallbacks remain for
+payloads the vendored builders do not cover.
 """
-
-import os
-import sys
-from datetime import datetime
 
 import discord
 
 from bot import embeds as bot_embeds
 from bot import formatting as fmt
+from bot import notifier_embeds as scraper_embeds
 from bot.cogs.raid import raid_member_rows
 from bot.cogs.war import attack_summary, attacks_left
-
-_SCRAPER_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "99N", "scrapers")
-)
-if _SCRAPER_DIR not in sys.path:
-    sys.path.insert(0, _SCRAPER_DIR)
-
-try:  # the scraper package is optional: the bot still runs without it
-    from notifier import embeds as scraper_embeds
-except Exception:  # pragma: no cover
-    scraper_embeds = None
 
 
 def _simple(title, description, color):
@@ -330,7 +317,9 @@ def _cwl_round(ctx, prev):
 
 
 def _system_stale(ctx, prev):
-    reader = ctx["reader"]
+    reader = ctx.get("reader")
+    if reader is None:
+        return []
     age = reader.age_hours(reader.freshest_stamp(), now=ctx["now"])
     if age is None or age <= 24:
         return []

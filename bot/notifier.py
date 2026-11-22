@@ -174,7 +174,11 @@ def due_events(guild_id, config_store, reader, state, now=None):
         spec = cfg["events"].get(key) or {}
         if not spec.get("enabled"):
             continue
-        embeds = trigger(ctx, state)
+        try:
+            embeds = trigger(ctx, state)
+        except Exception as exc:  # one bad trigger must not silence the rest
+            print(f"notifier: {key} failed: {exc}")
+            continue
         if embeds:
             out.append((key, embeds))
     return out

@@ -1,12 +1,12 @@
 # 99N Bot Discord
 
-Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. Bot ini berjalan tanpa ketergantungan API eksternal langsung saat melayani chat/notifikasi, melainkan membaca data snapshot JSON yang diproduksi secara berkala oleh scraper di repo [99N](https://github.com/fthyll/99N) serta menyertakan ilustrasi Town Hall asli (`assets/Town_Hall<level>.webp`).
+Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. Bot ini tidak memanggil API Supercell dan tidak bergantung pada checkout repo lain: semua data dibaca dari snapshot JSON yang di-commit di `data/` (bisa disegarkan dengan `refresh.py`), dan ilustrasi Town Hall asli (`assets/Town_Hall<level>.webp`) ikut di repo. Token Supercell tetap hanya di environment scraper.
 
 ---
 
 ## ⚡ Fitur Utama
 
-- **Zero-API Latency**: Membaca snapshot JSON lokal (`clan_stats`, `war_stats`, `raid_stats`, `player_stats`) sehingga respons perintah instan.
+- **Zero-API & Self-contained**: Tidak memanggil API Supercell, tidak butuh checkout repo lain. Snapshot JSON (`data/`) dan asset Town Hall (`assets/`) ikut di repo; `refresh.py` menarik data terbaru langsung dari GitHub.
 - **Dukungan Perintah Ganda**: Semua perintah tersedia sebagai pesan prefix (default: `!`) dan Discord Application Slash Commands (`/`).
 - **Rich Embeds & Gambar Town Hall**: Perintah `!member` dan `!th` menyertakan gambar WebP resmi Town Hall (level 1 sampai level 19) langsung di kartu Discord.
 - **Notifikasi Otomatis (14 Event)**: Background dispatcher mengecek perubahan snapshot setiap 5 menit dengan anti-spam cerdas (state tersimpan terpisah dari config).
@@ -54,11 +54,12 @@ python3 bot.py
 ```
 
 ### 5. Menyegarkan Snapshot
-`data/` dan `assets/` sudah di-commit agar bot langsung jalan setelah clone. Untuk menarik snapshot terbaru dari repo scraper:
+`data/` dan `assets/` sudah di-commit agar bot langsung jalan setelah clone. Untuk menarik snapshot terbaru tanpa perlu checkout `99N`:
 ```bash
-cp -R ../99N/data/. ./data/ && cp -R ../99N/assets/. ./assets/
+python3 refresh.py            # data/ saja
+python3 refresh.py --assets   # sekalian asset Town Hall
 ```
-Commit hasilnya bila ingin data terbaru ikut tersimpan di repo ini.
+Script ini mengambil dari `raw.githubusercontent.com` (repo `fthyll/99N`, branch `main`) hanya snapshot terbaru tiap folder — sekitar 0,8 MB, bukan 11 MB arsip penuh. Atur `REFRESH_REPO`/`REFRESH_BRANCH` bila ingin sumber lain.
 
 ---
 
@@ -135,7 +136,7 @@ Commit hasilnya bila ingin data terbaru ikut tersimpan di repo ini.
 
 ## 🧪 Pengujian Unit Test
 
-Proyek ini dilengkapi dengan 78 unit test komprehensif menggunakan standard library `unittest`:
+Proyek ini dilengkapi dengan 86 unit test komprehensif menggunakan standard library `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```
