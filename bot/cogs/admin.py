@@ -7,7 +7,13 @@ from discord.ext import commands
 
 from bot import bot_config
 from bot.config_store import ConfigStore
-from bot.events import GROUP_LABELS, event_keys
+from bot.events import (
+    GROUP_LABELS,
+    event_help,
+    event_keys,
+    event_label,
+    grouped_keys,
+)
 from bot.formatting import truncate
 from bot.notifier import StateStore, build_context, next_state
 
@@ -40,6 +46,61 @@ def build_config_summary(config):
     return "\n".join(lines)
 
 
+# Presets apply a common setup in one command. A human setting up the bot
+# usually wants "all war pings here, all raid pings there" or "turn everything
+# off except war result", not 14 separate /notif commands.
+PRESETS = {
+    "all": {
+        "label": "All notifications",
+        "description": "Turn on every notification the bot supports",
+        "keys": list(event_keys()),
+    },
+    "essential": {
+        "label": "Essential only (low noise)",
+        "description": "War matches & results, raid opens & finishes, roster changes",
+        "keys": ["war.preparation", "war.result", "raid.start", "raid.summary", "clan.roster"],
+    },
+    "war-only": {
+        "label": "War room only",
+        "description": "Match, result, ending soon, and attack reminders",
+        "keys": [k for k in event_keys() if k.startswith("war.")],
+    },
+    "raid-only": {
+        "label": "Raid weekend only",
+        "description": "Raid start, summary, and reminders",
+        "keys": [k for k in event_keys() if k.startswith("raid.")],
+    },
+}
+
+
+async def event_autocomplete(
+    interaction: discord.Interaction, current: str, include_all: bool = True
+) -> list[discord.app_commands.Choice[str]]:
+    """Autocomplete for the ``event`` parameter across all /notif subcommands.
+
+    Matches either the dotted key or any word in the human label, so a user
+    typing 'reminder' finds both war.attack_reminder and raid.reminder
+    without knowing the exact dot-syntax.
+
+    ``include_all`` is False where the wildcard would be meaningless, e.g.
+    ``/notif test`` which sends exactly one card.
+    """
+    needle = (current or "").strip().lower()
+    choices = []
+    if include_all and (not needle or needle in "all"):
+        choices.append(discord.app_commands.Choice(name="🔁 All notifications (all)", value="all"))
+    for key in event_keys():
+        haystack = f"{key} {event_label(key)}".lower()
+        if not needle or needle in haystack:
+            name = f"{event_label(key)} ({key})"
+            if len(name) > 100:
+                name = name[:97] + "..."
+            choices.append(discord.app_commands.Choice(name=name, value=key))
+            if len(choices) >= 25:
+                break
+    return choices
+
+
 class AdminCog(commands.Cog, name="admin"):
     """Slash-only: these commands change server-side configuration."""
 
@@ -54,53 +115,146 @@ class AdminCog(commands.Cog, name="admin"):
     async def notif(self, ctx):
         """Configure notification events."""
         if ctx.invoked_subcommand is None:
-            await ctx.send("Use `/notif list` to see every event.")
+            await ctx.send("Use `/notif panel` for an interactive menu, or `/notif list` to see every event.")
+
+    @notif.command(name="panel", description="Open an interactive notification control panel")
+    @commands.has_permissions(manage_guild=True)
+    async def notif_panel_cmd(self, ctx):
+        """Interactive control panel with menus and buttons."""
+        from bot.notif_panel import NotifPanel, build_panel_embed
+
+        config = self.config.get(ctx.guild.id)
+        embed = build_panel_embed(config)
+        view = NotifPanel(self.config, ctx.guild.id, ctx.author.id)
+        await ctx.send(embed=embed, view=view)
+
+    @notif.command(name="preset", description="Apply a pre-configured notification profile")
+    @commands.has_permissions(manage_guild=True)
+    async def notif_preset_cmd(
+        self,
+        ctx,
+        profile: str,
+        channel: discord.TextChannel = None,
+    ):
+        """Apply a group of notifications in one go (essential, war-only, raid-only, all)."""
+        target = profile.strip().lower()
+        if target not in PRESETS:
+            valid = ", ".join(f"`{k}`" for k in PRESETS)
+            await ctx.send(f"❌ Unknown preset `{profile}`. Choose one of: {valid}.")
+            return
+        spec = PRESETS[target]
+        target_channel = channel or ctx.channel
+
+        # Turn on the chosen set, turn off everything else.
+        for key in event_keys():
+            enabled = key in spec["keys"]
+            self.config.set(ctx.guild.id, f"events.{key}.enabled", enabled)
+            if enabled:
+                self.config.set_channel(ctx.guild.id, key, target_channel.id)
+
+        embed = discord.Embed(
+            title=f"✅ Applied preset: {spec['label']}",
+            description=(
+                f"{spec['description']}\n"
+                f"Enabled **{len(spec['keys'])}** notifications → <#{target_channel.id}>."
+            ),
+            color=0x57F287,
+        )
+        await ctx.send(embed=embed)
+
+    @notif_preset_cmd.autocomplete("profile")
+    async def _notif_preset_autocomplete(self, interaction, current):
+        needle = (current or "").strip().lower()
+        return [
+            discord.app_commands.Choice(
+                name=f"{info['label']} — {info['description']}"[:100],
+                value=key,
+            )
+            for key, info in PRESETS.items()
+            if not needle or needle in key or needle in info["label"].lower()
+        ][:25]
 
     @notif.command(name="list", description="List every event and its state")
     @commands.has_permissions(manage_guild=True)
     async def notif_list(self, ctx):
         config = self.config.get(ctx.guild.id)
-        lines = []
-        for row in build_notif_table(config):
-            mark = "✅" if row["enabled"] else "❌"
-            channel = row["channel_id"] or "—"
-            role = row["ping_role_id"] or "—"
-            lines.append(f"{mark} `{row['key']}` · channel {channel} · role {role}")
-        embed = discord.Embed(title="🔔 Notification events", color=0x5865F2)
-        embed.description = "\n".join(lines)
+        embed = discord.Embed(
+            title="🔔 Notification events",
+            description="Use `/notif panel` to edit these with a visual menu.",
+            color=0x5865F2,
+        )
+        for group, keys in grouped_keys():
+            lines = []
+            for key in keys:
+                spec = config["events"][key]
+                mark = "✅" if spec.get("enabled") else "⛔"
+                channel = f"<#{spec['channel_id']}>" if spec.get("channel_id") else "no channel"
+                role = f"<@&{spec['ping_role_id']}>" if spec.get("ping_role_id") else ""
+                route = f" → {channel}" + (f" ({role})" if role else "")
+                lines.append(f"{mark} **{event_label(key)}** (`{key}`){route}")
+            embed.add_field(
+                name=GROUP_LABELS.get(group, group.title()),
+                value="\n".join(lines),
+                inline=False,
+            )
         await ctx.send(embed=embed)
 
     @notif.command(name="set", description="Enable or disable one event")
     @commands.has_permissions(manage_guild=True)
     async def notif_set(self, ctx, event: str, state: str):
-        if event not in event_keys():
-            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list`.")
+        if event != "all" and event not in event_keys():
+            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list` or type to autocomplete.")
             return
         value = str(state).lower() in ("on", "true", "yes", "1", "enable", "enabled")
-        self.config.set(ctx.guild.id, f"events.{event}.enabled", value)
-        await ctx.send(f"{'✅ Enabled' if value else '❌ Disabled'} `{event}`.")
+        keys = list(event_keys()) if event == "all" else [event]
+        for key in keys:
+            self.config.set(ctx.guild.id, f"events.{key}.enabled", value)
+        action = "Enabled" if value else "Disabled"
+        target_name = "all notifications" if event == "all" else f"`{event}` ({event_label(event)})"
+        await ctx.send(f"{'✅' if value else '⛔'} {action} {target_name}.")
+
+    @notif_set.autocomplete("event")
+    async def _notif_set_autocomplete(self, interaction, current):
+        return await event_autocomplete(interaction, current)
+
+    @notif_set.autocomplete("state")
+    async def _notif_state_autocomplete(self, interaction, current):
+        return [
+            discord.app_commands.Choice(name="✅ On (enabled)", value="on"),
+            discord.app_commands.Choice(name="⛔ Off (disabled)", value="off"),
+        ]
 
     @notif.command(name="channel", description="Route an event to a channel")
     @commands.has_permissions(manage_guild=True)
     async def notif_channel(self, ctx, event: str, channel: discord.TextChannel = None):
         target = channel or ctx.channel
         if event != "all" and event not in event_keys():
-            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list`.")
+            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list` or type to autocomplete.")
             return
         self.config.set_channel(ctx.guild.id, event, target.id)
-        await ctx.send(f"📨 `{event}` notifications now go to <#{target.id}>.")
+        target_name = "All notifications" if event == "all" else f"`{event}`"
+        await ctx.send(f"📨 {target_name} now go to <#{target.id}>.")
+
+    @notif_channel.autocomplete("event")
+    async def _notif_channel_autocomplete(self, interaction, current):
+        return await event_autocomplete(interaction, current)
 
     @notif.command(name="ping", description="Mention a role when an event fires")
     @commands.has_permissions(manage_guild=True)
     async def notif_ping(self, ctx, event: str, role: discord.Role = None):
         if event != "all" and event not in event_keys():
-            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list`.")
+            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list` or type to autocomplete.")
             return
         role_id = role.id if role else None
         self.config.set_role(ctx.guild.id, event, role_id)
+        target_name = "All notifications" if event == "all" else f"`{event}`"
         await ctx.send(
-            f"🔔 `{event}` will mention {role.mention if role else 'nobody'}."
+            f"🔔 {target_name} will mention {role.mention if role else 'nobody'}."
         )
+
+    @notif_ping.autocomplete("event")
+    async def _notif_ping_autocomplete(self, interaction, current):
+        return await event_autocomplete(interaction, current)
 
     @notif.command(name="quiet", description="Set quiet hours")
     @commands.has_permissions(manage_guild=True)
@@ -117,7 +271,7 @@ class AdminCog(commands.Cog, name="admin"):
     @commands.has_permissions(manage_guild=True)
     async def notif_test(self, ctx, event: str):
         if event not in event_keys():
-            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list`.")
+            await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list` or type to autocomplete.")
             return
         from bot.events import NOTIFY_EVENTS
 
@@ -127,13 +281,16 @@ class AdminCog(commands.Cog, name="admin"):
         embeds = NOTIFY_EVENTS[event](ctx_data, {})
         if not embeds:
             # Fall back to a preview built from the current snapshot.
-            from bot.events import NOTIFY_EVENTS as _events  # noqa: F401
             embeds = _preview(event, ctx_data)
         if not embeds:
             await ctx.send(f"Nothing to preview for `{event}` right now.")
             return
         for embed in embeds:
             await ctx.send(embed=embed)
+
+    @notif_test.autocomplete("event")
+    async def _notif_test_autocomplete(self, interaction, current):
+        return await event_autocomplete(interaction, current, include_all=False)
 
     @notif.command(name="reset", description="Forget which notifications were already sent")
     @commands.has_permissions(manage_guild=True)

@@ -5,6 +5,45 @@ All notable changes to the **99N Bot Discord** project will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-23
+
+### Added
+- **`/notif panel`**: one message to configure everything. A dropdown lists every
+  notification with its current state and a plain description of when it fires,
+  **Turn on**/**Turn off** buttons act on the selection (or on everything via the
+  *All notifications* entry), and Discord's own **channel** and **role** pickers
+  replace typing snowflakes by hand. The embed re-renders from the config file on
+  every interaction, so it can never show a change that was not saved.
+- **`/notif preset <profile> [#channel]`**: apply a whole profile at once —
+  `essential`, `war-only`, `raid-only`, or `all` — routed to one channel.
+- **Autocomplete on every event argument**: `/notif set`, `/notif channel`,
+  `/notif ping` and `/notif test` suggest events by human label, so typing
+  `reminder` finds both `war.attack_reminder` and `raid.reminder`. `/notif set
+  state` suggests on/off; `/notif preset profile` suggests the profiles.
+- **Human labels and one-line help** for all 14 events (`bot/events.py`),
+  used by the panel, `/notif list`, and autocomplete.
+- **`/notif set all`** and `event=all` in autocomplete: one action for everything.
+- Verification scripts: `panel_probe.py` (panel structure and persistence),
+  `command_probe.py` (subcommand registration and autocomplete bindings),
+  `preview_panel.py` (renders `panel_preview.md`).
+
+### Changed
+- `/notif list` is grouped (War/Raid/Clan/CWL/System) and uses human labels plus
+  real `<#channel>`/`<@&role>` mentions instead of raw ids.
+- `/notif channel` now accepts `all`, matching `/notif set` and `/notif ping`.
+
+### Fixed
+- `@ui.select` defaults to a plain `Select`, so the channel and role pickers
+  rendered as empty dropdowns with no options; they now pass `cls=ChannelSelect`
+  / `cls=RoleSelect`.
+- The panel's *All notifications* entry used `__all__` where `ConfigStore`
+  expects `all`, raising `KeyError` on the first channel selection.
+- `clan.donation_weekly` posted an empty leaderboard when no clan snapshot was
+  available, breaking the "every trigger stays quiet without data" contract.
+- Startup warned that the privileged message-content intent was missing, because
+  `command_prefix` fell back to `"!"` while the intent was off. An empty prefix
+  list makes the slash-only mode explicit.
+
 ## [1.1.0] - 2026-11-23
 
 ### Added

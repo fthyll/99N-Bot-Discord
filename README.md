@@ -8,8 +8,9 @@ Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. B
 
 - **Live API dengan fallback graceful**: `bot/coc_api.py` memanggil API Supercell lewat stdlib `urllib` dengan cache TTL. Setiap kegagalan (403 token/IP, 5xx, timeout) dialihkan ke snapshot lokal dan dicatat — command Discord tidak pernah crash; penyebabnya bisa dibaca lewat `/freshness`.
 - **Self-contained**: Snapshot JSON (`data/`) dan asset Town Hall (`assets/`) ikut di repo; `refresh.py` menarik snapshot terbaru langsung dari GitHub tanpa checkout `99N`.
-- **Slash-only secara default**: Semua 30 perintah adalah `hybrid_command`, jadi berjalan sebagai `/` tanpa prefix. `BOT_PREFIX` kosong juga mematikan permintaan privileged intent `message_content` — tidak perlu toggle apa pun di Discord Developer Portal.
+- **Slash-only secara default**: Semua 32 perintah (23 top-level + 9 subcommand `/notif`) adalah `hybrid_command`, jadi berjalan sebagai `/` tanpa prefix. `BOT_PREFIX` kosong juga mematikan permintaan privileged intent `message_content` — tidak perlu toggle apa pun di Discord Developer Portal.
 - **Embed kaya**: Badge clan & liga resmi dari payload CoC, progress bar Unicode, rasio (win rate, turnout raid), form strip hasil war (`🟩🟥🟨`), dan medali 🥇🥈🥉 untuk peringkat. Kartu `member`/`th` menampilkan gambar WebP Town Hall 1–19.
+- **Pengaturan notifikasi ramah pemula**: `/notif panel` membuka satu pesan berisi dropdown semua notifikasi (dengan status dan penjelasan kapan ia menyala), tombol nyala/mati, serta picker channel & role bawaan Discord. Tersedia juga `/notif preset` dan autocomplete pada argumen event.
 - **Logging terstruktur**: Konsol + file berputar `logs/bot.log` (5 MB × 3). Perintah `/logs` membaca ekornya dari Discord, dan opsi `LOG_CHANNEL_ID` mencerminkan log ke channel.
 - **Notifikasi Otomatis (14 Event)**: Dispatcher background memeriksa perubahan snapshot dengan anti-spam cerdas (state tersimpan terpisah dari config).
 - **Multi-Guild & Quiet Hours**: Konfigurasi per server di `config/guilds/<guild_id>.json` dengan dukungan jam tenang.
@@ -120,8 +121,10 @@ Semua perintah adalah slash command (`/`). Tabel memakai nama slash.
 ### ⚙️ Admin & Notification Management
 | Perintah | Deskripsi |
 |---|---|
-| `/notif list` | Status aktif/nonaktif ke-14 event notifikasi. |
-| `/notif set <event> <on/off>` | Mengaktifkan atau menonaktifkan event tertentu. |
+| `/notif panel` | **Panel interaktif**: dropdown semua notifikasi + tombol on/off + picker channel & role milik Discord. Cara termudah mengatur notifikasi. |
+| `/notif preset <profil> [#ch]` | Terapkan profil siap pakai sekaligus: `essential`, `war-only`, `raid-only`, `all`. |
+| `/notif list` | Status tiap notifikasi, dikelompokkan (War/Raid/Clan/CWL/System) dengan nama manusiawi. |
+| `/notif set <event> <on/off>` | Nyalakan/matikan notifikasi. Parameternya autocomplete — ketik `reminder` untuk menemukan `war.attack_reminder` dan `raid.reminder`. |
 | `/notif channel <event\|all> [#ch]` | Tujuan pesan notifikasi. |
 | `/notif ping <event\|all> [@role]` | Role yang dimention saat event terpicu. |
 | `/notif quiet [start] [end] [on/off]` | Jam tenang agar bot tidak mengirim notifikasi di malam hari. |
@@ -131,6 +134,10 @@ Semua perintah adalah slash command (`/`). Tabel memakai nama slash.
 | `/config` | Konfigurasi server yang sedang aktif. |
 | `/freshness` | Sumber data (live vs snapshot), usia, dan error API terakhir. |
 | `/logs [lines] [level]` | Menampilkan ekor `logs/bot.log` dari Discord (admin). |
+
+> **Cara tercepat mengatur notifikasi:** jalankan `/notif panel`. Pilih notifikasi dari dropdown, tekan **Turn on**, lalu pilih channel lewat picker. Tidak perlu mengetik ID channel atau nama event ber-titik. Untuk setup sekali jalan, pakai `/notif preset essential`.
+
+Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid reminder`); kunci teknis (`war.result`) tetap dipakai di dalam file config dan tetap diterima sebagai argumen.
 
 ---
 
@@ -164,15 +171,19 @@ Semua perintah adalah slash command (`/`). Tabel memakai nama slash.
 | `bot/discord_log.py` | Handler opsional yang mencerminkan log ke channel Discord. |
 | `bot/embeds.py`, `bot/formatting.py` | Pembangun kartu & helper render (bar, pct, form, medali). |
 | `bot/notifier.py` | Dispatcher 14 event + state anti-spam. |
+| `bot/notif_panel.py` | Panel interaktif `/notif panel` (dropdown, tombol, picker channel/role). |
 | `scripts/preview_embeds.py` | Render semua embed dari data nyata ke `embed_preview.md`. |
+| `scripts/preview_panel.py` | Render isi panel notifikasi ke `panel_preview.md`. |
 | `scripts/boot_probe.py` | Uji startup tanpa token (cog, command tree, logging). |
+| `scripts/command_probe.py` | Verifikasi subcommand & binding autocomplete di command tree. |
+| `scripts/panel_probe.py` | Verifikasi struktur panel (opsi, baris, persistensi config). |
 | `scripts/live_check.py` | Start bot asli, buktikan online, lalu tutup. |
 
 ---
 
 ## 🧪 Pengujian
 
-176 unit test memakai stdlib `unittest`:
+214 unit test memakai stdlib `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```
@@ -180,7 +191,10 @@ python3 -m unittest discover -s tests -p "test_*.py" -t .
 Verifikasi manual:
 ```bash
 python3 scripts/boot_probe.py                 # startup + logging, tanpa token Discord
+python3 scripts/command_probe.py              # subcommand /notif + binding autocomplete
+python3 scripts/panel_probe.py                # struktur panel (opsi, baris, persistensi)
 python3 scripts/preview_embeds.py             # tulis embed_preview.md dari data nyata
+python3 scripts/preview_panel.py              # tulis panel_preview.md
 python3 scripts/live_check.py 25              # start sungguhan, cetak ONLINE=True/False
 ```
 

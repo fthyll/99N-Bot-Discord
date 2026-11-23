@@ -276,12 +276,14 @@ def _clan_donation_weekly(ctx, prev):
     stamp = now.strftime("%Y%m%d")
     if prev.get("clan", {}).get("donation_weekly") == stamp:
         return []
-    members = sorted(
-        ctx["clan"].get("memberList") or [],
-        key=lambda m: m.get("donations") or 0,
-        reverse=True,
-    )[:5]
-    lines = [f"{i + 1}. **{m.get('name', '?')}** — {fmt.num(m.get('donations', 0))}" for i, m in enumerate(members)]
+    members = ctx["clan"].get("memberList") or []
+    if not members:
+        # No clan snapshot (API down or nothing cached yet). Every other
+        # trigger stays quiet in that state; posting an empty leaderboard
+        # would be pure noise and would burn the weekly marker.
+        return []
+    top = sorted(members, key=lambda m: m.get("donations") or 0, reverse=True)[:5]
+    lines = [f"{i + 1}. **{m.get('name', '?')}** — {fmt.num(m.get('donations', 0))}" for i, m in enumerate(top)]
     return [_simple("🎁 Weekly donation leaders", "\n".join(lines) or "—", 0x3BA55D)]
 
 
@@ -357,6 +359,79 @@ GROUP_LABELS = {
     "cwl": "CWL",
     "system": "System",
 }
+
+# Presentation only. The keys stay dotted identifiers everywhere else; these
+# exist so a human never has to read "clan.donation_reset" to know what it does.
+GROUP_EMOJI = {
+    "war": "⚔️",
+    "raid": "🏰",
+    "clan": "👥",
+    "cwl": "🏆",
+    "system": "⚠️",
+}
+
+GROUP_ORDER = ("war", "raid", "clan", "cwl", "system")
+
+EVENT_LABELS = {
+    "war.preparation": "War matched",
+    "war.result": "War result",
+    "war.ending_soon": "War ending soon",
+    "war.attack_reminder": "Attacks pending",
+    "war.cleanup": "War cleanup",
+    "raid.start": "Raid started",
+    "raid.summary": "Raid finished",
+    "raid.reminder": "Raid reminder",
+    "clan.roster": "Member joined/left",
+    "clan.donation_reset": "Donation reset",
+    "clan.donation_weekly": "Weekly donors",
+    "clan.inactive": "Inactive members",
+    "cwl.round": "CWL round",
+    "system.stale": "Scraper stalled",
+}
+
+# One sentence explaining when the notification actually fires. Shown as the
+# SelectOption description so a human never has to read the trigger code.
+EVENT_HELP = {
+    "war.preparation": "Enemy found and preparation day begins",
+    "war.result": "Final result: win, loss or draw",
+    "war.ending_soon": "Under 2h left and attacks are unused",
+    "war.attack_reminder": "Under 12h left with attacks pending",
+    "war.cleanup": "War over, some members never attacked",
+    "raid.start": "Raid weekend has opened",
+    "raid.summary": "Raid weekend finished, with the loot recap",
+    "raid.reminder": "Raid ending and members have not raided",
+    "clan.roster": "A member joined or left the clan",
+    "clan.donation_reset": "A new donation season started",
+    "clan.donation_weekly": "Monday donation leaderboard",
+    "clan.inactive": "Members with zero donations",
+    "cwl.round": "Clan War League round changed",
+    "system.stale": "Scraper data is more than 24h old",
+}
+
+
+def event_label(key):
+    """Short human name for an event key, falling back to the key itself."""
+    return EVENT_LABELS.get(key, key)
+
+
+def event_help(key):
+    """One-line explanation of when an event fires."""
+    return EVENT_HELP.get(key, "")
+
+
+def grouped_keys():
+    """``[(group, [key, ...]), ...]`` in presentation order."""
+    keys = event_keys()
+    out = []
+    for group in GROUP_ORDER:
+        members = [k for k in keys if group_of(k) == group]
+        if members:
+            out.append((group, members))
+    # Any event under an unlisted group still shows up rather than vanishing.
+    known = {g for g, _ in out}
+    for group in sorted({group_of(k) for k in keys} - known):
+        out.append((group, [k for k in keys if group_of(k) == group]))
+    return out
 
 
 def event_keys():

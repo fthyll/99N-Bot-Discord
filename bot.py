@@ -35,7 +35,10 @@ class NinetyNineBot(commands.Bot):
         # BOT_PREFIX to re-enable both.
         if bot_config.BOT_PREFIX:
             intents.message_content = True
-        super().__init__(command_prefix=bot_config.BOT_PREFIX or "!", intents=intents)
+        # An empty prefix list tells discord.py there are no prefix commands, so
+        # it stops warning about the missing privileged intent. Passing "!" as
+        # a fallback while message_content is off is what produced the warning.
+        super().__init__(command_prefix=bot_config.BOT_PREFIX or [], intents=intents)
         self.dispatcher = None
         self._dispatch_task = None
 
