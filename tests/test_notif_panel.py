@@ -151,6 +151,17 @@ class TestPanelView(unittest.TestCase):
         self.assertIn(discord.ChannelType.text, picker.channel_types)
         self.assertNotIn(discord.ChannelType.voice, picker.channel_types)
 
+    def test_pickers_are_disabled_until_something_is_selected(self):
+        # An enabled picker with no target can only fail after the user already
+        # made a choice. Disabling it up front states the dependency.
+        view = self._view()
+        self.assertTrue(view.channel_select.disabled)
+        self.assertTrue(view.role_select.disabled)
+        view.selected = "war.result"
+        view._sync_actions()
+        self.assertFalse(view.channel_select.disabled)
+        self.assertFalse(view.role_select.disabled)
+
     def test_every_item_sits_on_a_valid_row(self):
         view = self._view()
         for item in view.children:

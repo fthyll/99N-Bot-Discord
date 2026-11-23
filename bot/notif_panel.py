@@ -259,6 +259,10 @@ class NotifPanel(ui.View):
         ready = self.selected is not None
         for item in (self.on_button, self.off_button):
             item.disabled = not ready
+        # The pickers need a target the same way the buttons do; leaving them
+        # clickable only produces an error after the choice is already made.
+        for item in (self.channel_select, self.role_select):
+            item.disabled = not ready
         self.test_button.disabled = self.selected in (None, ALL_VALUE)
 
     def _apply_enabled(self, value):
