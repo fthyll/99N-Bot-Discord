@@ -137,6 +137,8 @@ Semua perintah adalah slash command (`/`). Tabel memakai nama slash.
 
 > **Cara tercepat mengatur notifikasi:** jalankan `/notif panel`. Pilih notifikasi dari dropdown, tekan **Turn on**, lalu pilih channel lewat picker. Tidak perlu mengetik ID channel atau nama event ber-titik. Untuk setup sekali jalan, pakai `/notif preset essential`.
 
+> **Channel bisa beda-beda per notifikasi.** Kalau `channel_id` belum diisi, notifikasi tidak dikirim ke channel mana pun — panel menandai `no channel yet` dan `/logs` mencatat alasannya.
+
 Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid reminder`); kunci teknis (`war.result`) tetap dipakai di dalam file config dan tetap diterima sebagai argumen.
 
 ---
@@ -183,7 +185,7 @@ Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid r
 
 ## 🧪 Pengujian
 
-214 unit test memakai stdlib `unittest`:
+215 unit test memakai stdlib `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```

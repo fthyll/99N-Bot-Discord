@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Startup warned that the privileged message-content intent was missing, because
   `command_prefix` fell back to `"!"` while the intent was off. An empty prefix
   list makes the slash-only mode explicit.
+- The channel and role pickers stayed clickable before a notification was
+  chosen, so the only possible outcome was an error after the user had already
+  made a choice. They are disabled until a target exists, like the action
+  buttons.
 
 ## [1.1.0] - 2026-11-23
 
