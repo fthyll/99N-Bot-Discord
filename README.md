@@ -1,26 +1,26 @@
 # 99N Bot Discord
 
-Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. Bot ini tidak memanggil API Supercell dan tidak bergantung pada checkout repo lain: semua data dibaca dari snapshot JSON yang di-commit di `data/` (bisa disegarkan dengan `refresh.py`), dan ilustrasi Town Hall asli (`assets/Town_Hall<level>.webp`) ikut di repo. Token Supercell tetap hanya di environment scraper.
+Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. Bot berjalan **fail-soft**: bila `COC_API_TOKEN` diisi ia membaca Clash of Clans API resmi secara live, dan bila token kosong — atau API menolak/mengalami gangguan — ia otomatis melayani dari snapshot JSON yang di-commit di `data/`. Ilustrasi Town Hall asli (`assets/Town_Hall<level>.webp`) ikut di repo. Tidak perlu checkout proyek lain: clone lalu jalan.
 
 ---
 
 ## ⚡ Fitur Utama
 
-- **Zero-API & Self-contained**: Tidak memanggil API Supercell, tidak butuh checkout repo lain. Snapshot JSON (`data/`) dan asset Town Hall (`assets/`) ikut di repo; `refresh.py` menarik data terbaru langsung dari GitHub.
-- **Dukungan Perintah Ganda**: Semua perintah tersedia sebagai pesan prefix (default: `!`) dan Discord Application Slash Commands (`/`).
-- **Rich Embeds & Gambar Town Hall**: Perintah `!member` dan `!th` menyertakan gambar WebP resmi Town Hall (level 1 sampai level 19) langsung di kartu Discord.
-- **Notifikasi Otomatis (14 Event)**: Background dispatcher mengecek perubahan snapshot setiap 5 menit dengan anti-spam cerdas (state tersimpan terpisah dari config).
-- **Multi-Guild & Quiet Hours**: Konfigurasi per server tersimpan di `config/guilds/<guild_id>.json` dengan dukungan jam tenang malam hari.
+- **Live API dengan fallback graceful**: `bot/coc_api.py` memanggil API Supercell lewat stdlib `urllib` dengan cache TTL. Setiap kegagalan (403 token/IP, 5xx, timeout) dialihkan ke snapshot lokal dan dicatat — command Discord tidak pernah crash; penyebabnya bisa dibaca lewat `/freshness`.
+- **Self-contained**: Snapshot JSON (`data/`) dan asset Town Hall (`assets/`) ikut di repo; `refresh.py` menarik snapshot terbaru langsung dari GitHub tanpa checkout `99N`.
+- **Slash-only secara default**: Semua 30 perintah adalah `hybrid_command`, jadi berjalan sebagai `/` tanpa prefix. `BOT_PREFIX` kosong juga mematikan permintaan privileged intent `message_content` — tidak perlu toggle apa pun di Discord Developer Portal.
+- **Embed kaya**: Badge clan & liga resmi dari payload CoC, progress bar Unicode, rasio (win rate, turnout raid), form strip hasil war (`🟩🟥🟨`), dan medali 🥇🥈🥉 untuk peringkat. Kartu `member`/`th` menampilkan gambar WebP Town Hall 1–19.
+- **Logging terstruktur**: Konsol + file berputar `logs/bot.log` (5 MB × 3). Perintah `/logs` membaca ekornya dari Discord, dan opsi `LOG_CHANNEL_ID` mencerminkan log ke channel.
+- **Notifikasi Otomatis (14 Event)**: Dispatcher background memeriksa perubahan snapshot dengan anti-spam cerdas (state tersimpan terpisah dari config).
+- **Multi-Guild & Quiet Hours**: Konfigurasi per server di `config/guilds/<guild_id>.json` dengan dukungan jam tenang.
 
 ---
 
 ## 📦 Instalasi & Menjalankan Bot
 
 ### 1. Prasyarat
-- Python 3.9+
+- Python 3.9+ (teruji di 3.9 dan 3.14)
 - Pip
-
-Tidak perlu checkout `99N` di sebelah repo ini: snapshot JSON (`data/`) dan asset Town Hall (`assets/`) sudah ikut di dalam repo.
 
 ### 2. Setup Virtual Environment & Dependencies
 ```bash
@@ -35,18 +35,35 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Isi variabel di `.env`:
+Minimal yang perlu diisi — bot langsung jalan hanya dengan token Discord:
 ```env
 DISCORD_BOT_TOKEN=your_bot_token_here
-BOT_PREFIX=!
-DISCORD_GUILD_ID=                  # Opsional: ID server untuk instant slash sync saat dev
+BOT_PREFIX=                        # kosong = slash-only, tanpa privileged intent
+DISCORD_GUILD_ID=                  # Opsional: ID server untuk instant slash sync
 DATA_DIR=./data                    # Snapshot JSON yang ikut di repo ini
 ASSET_DIR=./assets                 # Asset WebP Town Hall yang ikut di repo ini
 CONFIG_DIR=./config/guilds         # Folder penyimpanan konfigurasi per guild
 BOT_TIMEZONE=Asia/Jakarta
 ```
 
+#### Mode live Clash of Clans API (opsional)
+```env
+COC_API_TOKEN=                     # dari https://developer.clashofclans.com
+CLAN_TAG=#2J0YP2LQL
+COC_CACHE_SECONDS=600
+COC_PLAYER_LIMIT=                  # batasi lookup profil per anggota (kosong = semua)
+```
+
+> **Penting — IP allowlist.** Supercell menolak token dari IP yang belum terdaftar dengan HTTP `403 accessDenied`. Tambahkan IP publik mesin ini ke key tersebut di https://developer.clashofclans.com. Bila IP tidak bisa di-allowlist (mis. IP dinamis), set `COC_API_BASE_URL=https://cocproxy.royaleapi.dev/v1` atau biarkan token kosong untuk memakai snapshot.
+
 Arahkan `DATA_DIR`/`ASSET_DIR` ke checkout `99N` (`../99N/data`, `../99N/assets`) bila ingin membaca data scraper terbaru, bukan salinan yang di-commit.
+
+#### Logging (opsional)
+```env
+LOG_LEVEL=INFO                     # DEBUG | INFO | WARNING | ERROR | CRITICAL
+LOG_CHANNEL_ID=                    # isi channel id untuk mencerminkan log ke Discord
+BOT_LOG_DIR=                       # override lokasi logs/ (default: repo ini)
+```
 
 ### 4. Menjalankan Bot
 ```bash
@@ -54,92 +71,120 @@ python3 bot.py
 ```
 
 ### 5. Menyegarkan Snapshot
-`data/` dan `assets/` sudah di-commit agar bot langsung jalan setelah clone. Untuk menarik snapshot terbaru tanpa perlu checkout `99N`:
 ```bash
 python3 refresh.py            # data/ saja
 python3 refresh.py --assets   # sekalian asset Town Hall
 ```
-Script ini mengambil dari `raw.githubusercontent.com` (repo `fthyll/99N`, branch `main`) hanya snapshot terbaru tiap folder — sekitar 0,8 MB, bukan 11 MB arsip penuh. Atur `REFRESH_REPO`/`REFRESH_BRANCH` bila ingin sumber lain.
+Mengambil dari `raw.githubusercontent.com` (repo `fthyll/99N`, branch `main`) hanya snapshot terbaru tiap folder — sekitar 0,8 MB, bukan 11 MB arsip penuh. Atur `REFRESH_REPO`/`REFRESH_BRANCH` untuk sumber lain.
 
 ---
 
 ## 📋 Daftar Perintah
 
+Semua perintah adalah slash command (`/`). Tabel memakai nama slash.
+
 ### 🏛️ Clan Commands
-| Prefix | Slash | Deskripsi |
-|---|---|---|
-| `!clan` | `/clan` | Menampilkan ringkasan profil clan (badge, level, piala, rekor war). |
-| `!roster [sort] [role]` | `/roster` | Daftar anggota clan dengan filter role (`elder`, `coLeader`, dll) & sorting (`trophies`, `donations`, `th`). |
-| `!top [metric] [limit]` | `/top` | Peringkat anggota teratas berdasarkan piala, donasi, atau level TH. |
+| Perintah | Deskripsi |
+|---|---|
+| `/clan` | Ringkasan clan: badge resmi, level, piala, rekor & win-rate war (dengan bar), win streak, kapital, liga, lokasi, label. |
+| `/roster [sort] [role] [limit]` | Daftar anggota dengan penanda 👑/⭐, filter role (`elder`, `coLeader`, dll), sorting (`trophies`, `donations`, `th`), plus total & net donasi. |
+| `/top [metric] [limit]` | Peringkat anggota (🥇🥈🥉 + bar) berdasarkan piala, donasi, atau level TH. |
 
 ### 👤 Player Commands
-| Prefix | Slash | Deskripsi |
-|---|---|---|
-| `!member <nama/tag>` | `/member` | Kartu profil lengkap pemain beserta gambar level Town Hall. |
-| `!th <level>` | `/th` | Melihat preview gambar Town Hall level 1 hingga 19. |
-| `!topplayers [metric]` | `/topplayers` | Leaderboard pemain clan berdasarkan war stars atau donasi capital. |
-| `!trend <nama/tag> [metric]` | `/trend` | Grafik tren 14 hari terakhir pemain (piala, donasi, war stars). |
-| `!compare <nama1> <nama2>` | `/compare` | Membandingkan statistik 2 pemain secara berdampingan. |
-| `!cwl` | `/cwl` | Klasemen dan status Clan War League terkini. |
-| `!inactive` | `/inactive` | Menampilkan anggota yang belum melakukan donasi di snapshot ini. |
+| Perintah | Deskripsi |
+|---|---|
+| `/member <nama/tag>` | Kartu profil lengkap pemain beserta gambar level Town Hall. |
+| `/th <level>` | Preview gambar Town Hall level 1 hingga 19. |
+| `/topplayers [metric]` | Leaderboard pemain berdasarkan war stars atau donasi capital. |
+| `/trend <nama/tag> [metric]` | Grafik tren 14 hari terakhir pemain (piala, donasi, war stars). |
+| `/compare <nama1> <nama2>` | Membandingkan statistik 2 pemain secara berdampingan. |
+| `/cwl` | Klasemen CWL dengan bar poin dan penanda baris clan sendiri. |
+| `/inactive` | Anggota yang belum donasi, dengan jumlah dan persentase aktif. |
 
 ### ⚔️ War Commands
-| Prefix | Slash | Deskripsi |
-|---|---|---|
-| `!war` | `/war` | Status live war (bintang, persentase damage, sisa waktu). |
-| `!attacks` | `/attacks` | Daftar anggota yang masih memiliki sisa serangan war. |
-| `!lineup` | `/lineup` | Perbandingan susunan base kita vs musuh di map war. |
-| `!warlog` | `/warlog` | Riwayat hasil war sebelumnya. |
-| `!warstats` | `/warstats` | Statistik keseluruhan (win rate, rekor streak, rata-rata bintang). |
+| Perintah | Deskripsi |
+|---|---|
+| `/war` | Status war: bar bintang, siapa unggul, destruction, sisa serangan, jumlah anggota belum menyerang. |
+| `/attacks` | Anggota yang masih punya sisa serangan beserta bar per pemain. |
+| `/lineup` | Perbandingan susunan base kita vs musuh, diringkas berapa matchup seimbang/lebih mudah/lebih sulit. |
+| `/warlog` | Riwayat war + form strip (🟩🟥🟨). |
+| `/warstats` | Win rate (dengan bar), rekor, streak, margin bintang, form terakhir. |
 
 ### 🏕️ Raid Weekend Commands
-| Prefix | Slash | Deskripsi |
-|---|---|---|
-| `!raid` | `/raid` | Ringkasan Raid Weekend (total medali, raid attack, gold dijarah). |
-| `!raidmembers` | `/raidmembers` | Rincian serangan dan hasil Capital Gold tiap anggota. |
-| `!raidabsent` | `/raidabsent` | Daftar anggota yang belum menyerang di Raid Weekend. |
+| Perintah | Deskripsi |
+|---|---|
+| `/raid` | Ringkasan Raid Weekend: loot, district hancur, porsi loot top-3, hadiah, dan top looter ber-medali. |
+| `/raidmembers` | Rincian serangan (dari kapasitas 5+1 bonus) dan Capital Gold tiap anggota, plus turnout clan. |
+| `/raidabsent` | Anggota yang belum menyerang, dihitung dari diff roster clan. |
 
 ### ⚙️ Admin & Notification Management
 | Perintah | Deskripsi |
 |---|---|
-| `/notif list` | Menampilkan status aktif/nonaktif ke-14 notifikasi event. |
-| `/notif set <event> <on/off>` | Mengaktifkan atau menonaktifkan event notifikasi tertentu. |
-| `/notif channel <event\|all> [#ch]` | Mengarahkan tujuan pesan notifikasi ke channel tertentu. |
-| `/notif ping <event\|all> [@role]` | Mengatur role yang dimention saat event terpicu. |
-| `/notif quiet [start] [end] [on/off]` | Mengatur jam tenang agar bot tidak mengirim notifikasi di malam hari. |
-| `/notif test <event>` | Menguji coba pengiriman kartu embed event ke channel saat ini. |
-| `/notif reset` | Menghapus state anti-spam agar notifikasi lama dapat dikirim ulang jika perlu. |
-| `!broadcast <pesan> [#ch]` | Mengirim pengumuman resmi dari clan/admin ke channel. |
-| `!config` | Memeriksa konfigurasi server yang sedang aktif. |
-| `!freshness` | Memeriksa usia data snapshot scraper (deteksi data basi). |
+| `/notif list` | Status aktif/nonaktif ke-14 event notifikasi. |
+| `/notif set <event> <on/off>` | Mengaktifkan atau menonaktifkan event tertentu. |
+| `/notif channel <event\|all> [#ch]` | Tujuan pesan notifikasi. |
+| `/notif ping <event\|all> [@role]` | Role yang dimention saat event terpicu. |
+| `/notif quiet [start] [end] [on/off]` | Jam tenang agar bot tidak mengirim notifikasi di malam hari. |
+| `/notif test <event>` | Menguji pengiriman kartu embed event ke channel saat ini. |
+| `/notif reset` | Menghapus state anti-spam agar notifikasi bisa dikirim ulang. |
+| `/broadcast <pesan> [#ch]` | Pengumuman resmi ke channel. |
+| `/config` | Konfigurasi server yang sedang aktif. |
+| `/freshness` | Sumber data (live vs snapshot), usia, dan error API terakhir. |
+| `/logs [lines] [level]` | Menampilkan ekor `logs/bot.log` dari Discord (admin). |
 
 ---
 
 ## 🔔 Notifikasi Otomatis (14 Event)
 
-1. `war.preparation`: Saat musuh war ditemukan & masa persiapan dimulai.
-2. `war.result`: Hasil akhir war (Menang / Kalah / Seri) diumumkan.
-3. `war.ending_soon`: Peringatan sisa waktu war < 2 jam dengan serangan belum selesai.
-4. `war.attack_reminder`: Pengingat bagi anggota yang masih memiliki tiket serangan.
-5. `war.cleanup`: Rekap evaluasi serangan anggota setelah war selesai.
+1. `war.preparation`: Musuh war ditemukan & masa persiapan dimulai.
+2. `war.result`: Hasil akhir war (Menang / Kalah / Seri).
+3. `war.ending_soon`: Sisa waktu war < 2 jam dengan serangan belum selesai.
+4. `war.attack_reminder`: Pengingat anggota yang masih punya tiket serangan.
+5. `war.cleanup`: Rekap evaluasi serangan setelah war selesai.
 6. `raid.start`: Pembukaan Raid Weekend Clan Capital.
-7. `raid.summary`: Rekap perolehan medali dan gold saat Raid Weekend berakhir.
-8. `raid.reminder`: Pengingat serangan Raid Weekend bagi yang belum selesai.
-9. `clan.roster`: Pengumuman anggota baru bergabung atau keluar dari clan.
-10. `clan.donation_reset`: Notifikasi reset season donasi bulanan.
-11. `clan.donation_weekly`: Rekap mingguan pendonor tertinggi di clan.
-12. `clan.inactive`: Notifikasi anggota tidak aktif yang belum donasi.
-13. `cwl.round`: Pergantian hari/ronde pertempuran di Clan War League.
-14. `system.stale`: Peringatan otomatis jika data scraper macet atau tidak terupdate >24 jam.
+7. `raid.summary`: Rekap medali dan gold saat Raid Weekend berakhir.
+8. `raid.reminder`: Pengingat serangan Raid Weekend.
+9. `clan.roster`: Anggota baru bergabung atau keluar.
+10. `clan.donation_reset`: Reset season donasi bulanan.
+11. `clan.donation_weekly`: Rekap mingguan pendonor tertinggi.
+12. `clan.inactive`: Anggota tidak aktif yang belum donasi.
+13. `cwl.round`: Pergantian ronde Clan War League.
+14. `system.stale`: Peringatan data scraper macet >24 jam.
 
 ---
 
-## 🧪 Pengujian Unit Test
+## 🗂️ Struktur Penting
 
-Proyek ini dilengkapi dengan 86 unit test komprehensif menggunakan standard library `unittest`:
+| Path | Isi |
+|---|---|
+| `bot.py` | Entry point: intents, logging, cog, sync command, dispatcher. |
+| `bot/coc_api.py` | Client API CoC (TTL cache, fallback snapshot, `last_errors`). |
+| `bot/offload.py` | `WarmCache`: refresh background agar event loop tidak stall. |
+| `bot/logging_setup.py` | Konfigurasi logging (konsol + file berputar). |
+| `bot/discord_log.py` | Handler opsional yang mencerminkan log ke channel Discord. |
+| `bot/embeds.py`, `bot/formatting.py` | Pembangun kartu & helper render (bar, pct, form, medali). |
+| `bot/notifier.py` | Dispatcher 14 event + state anti-spam. |
+| `scripts/preview_embeds.py` | Render semua embed dari data nyata ke `embed_preview.md`. |
+| `scripts/boot_probe.py` | Uji startup tanpa token (cog, command tree, logging). |
+| `scripts/live_check.py` | Start bot asli, buktikan online, lalu tutup. |
+
+---
+
+## 🧪 Pengujian
+
+176 unit test memakai stdlib `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```
+
+Verifikasi manual:
+```bash
+python3 scripts/boot_probe.py                 # startup + logging, tanpa token Discord
+python3 scripts/preview_embeds.py             # tulis embed_preview.md dari data nyata
+python3 scripts/live_check.py 25              # start sungguhan, cetak ONLINE=True/False
+```
+
+`scripts/live_check.py` butuh `DISCORD_BOT_TOKEN` yang valid dan keluar dengan kode 1 bila bot tidak pernah mencapai ready.
 
 ---
 

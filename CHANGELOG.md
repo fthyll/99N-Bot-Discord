@@ -5,6 +5,32 @@ All notable changes to the **99N Bot Discord** project will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-23
+
+### Added
+- **Live Clash of Clans API (`bot/coc_api.py`)**:
+  - Stdlib `urllib` client with a TTL cache (`COC_CACHE_SECONDS`).
+  - `WarmCache` (`bot/offload.py`) refreshes in a background thread so no slash command ever waits on a socket.
+  - Graceful fallback: any API failure (403 token/IP, 5xx, timeout) serves the committed snapshot and records the reason in `last_errors` for `/freshness`, instead of raising into a Discord command.
+- **Structured logging (`bot/logging_setup.py`, `bot/discord_log.py`)**:
+  - Console plus a rotating `logs/bot.log` (5 MB × 3 backups), stdlib only, no new dependency.
+  - `LOG_LEVEL` and `BOT_LOG_DIR` environment overrides; `discord.py` internals kept at WARNING.
+  - Optional `LOG_CHANNEL_ID` mirrors log lines into a Discord channel; the handler posts from a thread-safe deque via `call_soon_threadsafe`, drops rather than raises, and is opt-in so the bot never posts its own logs uninvited.
+- **`/logs [lines] [level]`**: tails `logs/bot.log` from Discord, reading the file in an executor so a large log cannot stall the event loop.
+- **Richer embeds**: official CoC clan/league badges as thumbnails, Unicode progress bars, percentages and ratios (war win-rate, raid top-3 share, turnout), win-form strips (`🟩🟥🟨`), and 🥇🥈🥉 ranking medals. `/member` adds exp level, net donations, war/attack/defense wins, and league tier when the profile API provides them.
+- **Verification scripts**: `scripts/preview_embeds.py` renders every embed from real data, `scripts/boot_probe.py` exercises startup without a token, `scripts/live_check.py` starts the real bot and asserts it reaches ready.
+
+### Changed
+- **Slash-only by default**: `BOT_PREFIX` ships empty and `intents.message_content` is only requested when a prefix is set, removing the need to toggle a privileged intent in the Discord Developer Portal.
+- `/freshness` is mode-aware: it reports live-cache state and API errors in live mode, snapshot age otherwise.
+- Clan war record now includes draws, and war win-rate is a percentage with a bar.
+
+### Fixed
+- Raid attack display showed `6/5`: `attacks` counts bonus attacks, so capacity must be `attackLimit + bonusAttackLimit`.
+- Raid "no attacks" could never be non-zero, because the raid payload only lists members who attacked; it now diffs against the clan roster.
+- `getattr(channel, "name", channel.id)` evaluated `channel.id` eagerly and raised on a channel without an `id`, marking a successful notification send as failed.
+- `discord.Client.loop` raises `AttributeError` outside a running loop; the log handler and `/logs` now capture the loop with `asyncio.get_running_loop()`.
+
 ## [1.0.0] - 2026-11-22
 
 ### Added

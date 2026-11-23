@@ -5,8 +5,7 @@ from discord.ext import commands
 
 from bot import bot_config
 from bot.embeds import BLUE, GREEN, GREY, RED, GOLD
-from bot.formatting import coc_time, duration_text, hours_until, num, truncate
-from bot.snapshots import SnapshotReader
+from bot.formatting import bar, coc_time, duration_text, form, hours_until, num, pct, truncate
 
 STATE_COLORS = {
     "preparation": BLUE,
@@ -86,23 +85,57 @@ def build_war_embed(war):
     embed.color = STATE_COLORS.get(state, GREY)
 
     remaining = hours_until(war.get("endTime"))
+    self_stars = int(clan.get("stars") or 0)
+    foe_stars = int(opponent.get("stars") or 0)
+    size = int(war.get("teamSize") or 0)
+    max_stars = size * 3 or 1
+    per_member = int(war.get("attacksPerMember") or 2)
+    total_attacks = size * per_member
+    used = int(clan.get("attacks") or 0)
+
+    # Leading/trailing tells the reader who is winning faster than two numbers.
+    if self_stars > foe_stars:
+        lead = f"🟢 +{self_stars - foe_stars} star(s) ahead"
+    elif self_stars < foe_stars:
+        lead = f"🔴 {foe_stars - self_stars} star(s) behind"
+    else:
+        lead = "🟡 dead even"
+
     lines = [
-        f"**State**: {state}",
-        f"**Size**: {war.get('teamSize', '?')}v{war.get('teamSize', '?')}",
-        f"**Stars**: {clan.get('stars', 0)} – {opponent.get('stars', 0)}",
-        f"**Destruction**: {clan.get('destructionPercentage', 0):.1f}% vs "
+        f"**State** · {state}   |   **Size** · {size}v{size}",
+        f"**Lead** · {lead}",
+        "",
+        f"**Stars** {self_stars} – {foe_stars}   `{bar(self_stars, max_stars, 12)}`",
+        f"**Destruction** {clan.get('destructionPercentage', 0):.1f}% – "
         f"{opponent.get('destructionPercentage', 0):.1f}%",
-        f"**Attacks used**: {clan.get('attacks', 0)} / "
-        f"{int(war.get('teamSize') or 0) * int(war.get('attacksPerMember') or 2)}",
+        "",
+        f"**Attacks** {used}/{total_attacks}   `{bar(used, total_attacks, 12)}`",
     ]
     if remaining is not None:
-        lines.append(f"**Ends**: {coc_time(war.get('endTime'))} ({duration_text(remaining)})")
+        lines.append(f"**Ends** · {coc_time(war.get('endTime'))} ({duration_text(remaining)})")
     embed.description = "\n".join(lines)
 
-    embed.add_field(name="Opponent", value=f"{opponent.get('name', '?')} (Lv {opponent.get('clanLevel', '?')})", inline=True)
-    embed.add_field(name="Attacks left", value=str(attacks_left(war)), inline=True)
-    embed.add_field(name="Modifier", value=str(war.get("battleModifier", "none")).title(), inline=True)
-    embed.set_footer(text=f"99N War Room · {coc_time(war.get('startTime'))}")
+    embed.add_field(name="⚔️ Opponent", value=f"{opponent.get('name', '?')} (Lv {opponent.get('clanLevel', '?')})", inline=True)
+    embed.add_field(name="🎯 Attacks left", value=str(attacks_left(war)), inline=True)
+    embed.add_field(name="✨ Modifier", value=str(war.get("battleModifier", "none")).title(), inline=True)
+
+    # Attacks still in hand, grouped by how many each member owes. This is the
+    # one thing officers check mid-war and the old card never showed it.
+    rows = attack_summary(war)
+    idle = [r for r in rows if r["attacks"] == 0]
+    if rows:
+        embed.add_field(name="Members", value=f"{len(rows)} on the map", inline=True)
+        embed.add_field(name="No attacks yet", value=f"{len(idle)} member(s)", inline=True)
+        avg = used / len(rows) if rows else 0
+        embed.add_field(name="Avg attacks", value=f"{avg:.1f}/{per_member}", inline=True)
+
+    for side, field_name in ((clan, "Our badge"), (opponent, "Their badge")):
+        badge = (side.get("badgeUrls") or {}).get("medium") or (side.get("badgeUrls") or {}).get("small")
+        if badge:
+            embed.set_thumbnail(url=badge)
+            break
+
+    embed.set_footer(text=f"99N War Room · started {coc_time(war.get('startTime'))}")
     return embed
 
 
@@ -121,8 +154,14 @@ def build_attack_embed(war):
     for row in without[:25]:
         left = row["max_attacks"] - row["attacks"]
         pos = f" · pos {row['position']}" if row["position"] is not None else ""
-        lines.append(f"**{row['name']}** — {row['attacks']}/{row['max_attacks']} used, {left} left{pos}")
+        lines.append(
+            f"**{row['name']}** — {left} left{pos}\n"
+            f"`{bar(row['attacks'], row['max_attacks'], 4)}` {row['attacks']}/{row['max_attacks']}"
+        )
     embed.description = truncate("\n".join(lines))
+    embed.add_field(name="⚠️ Still owe", value=str(len(without)), inline=True)
+    embed.add_field(name="✅ Finished", value=str(len(rows) - len(without)), inline=True)
+    embed.add_field(name="📊 Completion", value=pct(len(rows) - len(without), len(rows)), inline=True)
     embed.set_footer(text=f"{len(without)} of {len(rows)} attackers still have attacks left")
     return embed
 
@@ -141,6 +180,15 @@ def build_lineup_embed(war):
             foe = f"{row['opponent_name']} (TH{row['opponent_th']})"
         lines.append(f"**{pos}.** {row['name']} (TH{row['th']}) vs {foe}")
     embed.description = truncate("\n".join(lines))
+    # Same-TH bases are the easy clean-up targets; a negated edge is the one
+    # that needs a plan.
+    pairs = [(r["th"], r["opponent_th"]) for r in rows if r["th"] and r["opponent_th"]]
+    if pairs:
+        even = sum(1 for a, b in pairs if a == b)
+        easier = sum(1 for a, b in pairs if a > b)
+        harder = sum(1 for a, b in pairs if a < b)
+        embed.add_field(name="Matchups", value=f"= {even} · easier {easier} · harder {harder}", inline=True)
+    embed.set_footer(text=f"{len(rows)} positions")
     return embed
 
 
@@ -153,8 +201,12 @@ def build_warlog_embed(items, limit=10):
     if not items:
         embed.description = "No war log available."
         return embed
+    shown = items[:limit]
+    embed.description = (
+        f"**Form** (oldest → newest)\n{form([i.get('result') for i in shown], limit=limit)}"
+    )
     lines = []
-    for item in items[:limit]:
+    for item in shown:
         clan = item.get("clan") or {}
         opponent = item.get("opponent") or {}
         result = str(item.get("result", "?")).upper()
@@ -164,7 +216,7 @@ def build_warlog_embed(items, limit=10):
             f"{clan.get('stars', 0)}–{opponent.get('stars', 0)} stars "
             f"({coc_time(item.get('endTime'))})"
         )
-    embed.description = truncate("\n".join(lines))
+    embed.add_field(name=f"Last {len(shown)} wars", value=truncate("\n".join(lines)), inline=False)
     return embed
 
 
@@ -193,17 +245,21 @@ def build_warstats_embed(items):
 
     embed.description = (
         f"**Wars archived**: {len(finished)}\n"
-        f"**Win rate**: {rate:.1f}% ({wins}W / {losses}L / {draws}D)\n"
-        f"**Current streak**: {streak} win{'s' if streak != 1 else ''}\n"
+        f"`{bar(wins, len(finished), 16)}` **{rate:.1f}%**\n"
+        f"**Record**: {wins}W / {losses}L / {draws}D\n"
+        f"**Current streak**: 🔥 {streak} win{'s' if streak != 1 else ''}\n"
         f"**Avg stars**: {ours:.1f} — {theirs:.1f}"
     )
+    embed.add_field(name="Recent form", value=form([i.get("result") for i in finished]), inline=False)
+    embed.add_field(name="Avg stars", value=f"us {ours:.1f} · them {theirs:.1f}", inline=True)
+    embed.add_field(name="Star margin", value=f"{ours - theirs:+.1f}", inline=True)
     return embed
 
 
 class WarCog(commands.Cog, name="war"):
     def __init__(self, bot):
         self.bot = bot
-        self.reader = SnapshotReader(str(bot_config.DATA_DIR))
+        self.reader = bot_config.build_reader()
 
     @commands.hybrid_command(name="war", description="Status of the current or last war")
     async def war(self, ctx):

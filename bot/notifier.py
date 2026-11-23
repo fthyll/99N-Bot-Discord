@@ -15,6 +15,7 @@ quiet for the rest of the war.
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -30,6 +31,8 @@ from bot.snapshots import SnapshotReader
 WAR_MARKERS = ("preparation_key", "ending_soon_key", "reminder_key", "cleanup_key")
 RAID_MARKERS = ("reminder_key",)
 CLAN_MARKERS = ("donation_weekly", "donation_reset", "inactive")
+
+log = logging.getLogger("99n.notifier")
 
 
 class StateStore:
@@ -177,7 +180,7 @@ def due_events(guild_id, config_store, reader, state, now=None):
         try:
             embeds = trigger(ctx, state)
         except Exception as exc:  # one bad trigger must not silence the rest
-            print(f"notifier: {key} failed: {exc}")
+            log.exception("trigger %s raised, skipping it this tick", key)
             continue
         if embeds:
             out.append((key, embeds))
@@ -189,7 +192,7 @@ class Dispatcher:
 
     def __init__(self, bot, reader=None, config_store=None, state_store=None):
         self.bot = bot
-        self.reader = reader or SnapshotReader(str(bot_config.DATA_DIR))
+        self.reader = reader or bot_config.build_reader()
         self.config = config_store or ConfigStore(str(bot_config.CONFIG_DIR))
         self.states = state_store or StateStore(str(bot_config.CONFIG_DIR))
 
@@ -220,12 +223,16 @@ class Dispatcher:
         reset and stale data all at once, then post every one of them.
         """
         now = datetime.now(timezone.utc)
-        for guild_id in self._guild_ids():
+        guilds = self._guild_ids()
+        log.info("priming %d guild(s) — marking current state as already sent", len(guilds))
+        for guild_id in guilds:
             state = self.states.get(guild_id)
             ctx = build_context(self.reader, state, now=now)
             # Every event whose condition is already true is marked as if the
             # message had been delivered, but nothing is sent.
             already = [key for key, _ in due_events(guild_id, self.config, self.reader, state, now=now)]
+            if already:
+                log.info("guild %s primed, suppressing: %s", guild_id, ", ".join(sorted(already)))
             self.states.save(guild_id, next_state(ctx, state, fired=already))
 
     async def tick(self, now=None):
@@ -237,6 +244,7 @@ class Dispatcher:
             cfg = self.config.get(guild_id)
 
             if self._in_quiet_hours(guild_id, now):
+                log.debug("guild %s is in quiet hours, skipping", guild_id)
                 continue
 
             delivered = []
@@ -244,15 +252,31 @@ class Dispatcher:
                 spec = cfg["events"][key]
                 channel = self.bot.get_channel(spec.get("channel_id") or 0)
                 if channel is None:
-                    continue  # unconfigured channel must not claim the marker
+                    # Unconfigured channel must not claim the marker; log it so
+                    # a "notifications never arrive" report has an answer.
+                    log.warning(
+                        "guild %s: %s is due but channel %s is not reachable",
+                        guild_id, key, spec.get("channel_id"),
+                    )
+                    continue
                 content = f"<@&{spec['ping_role_id']}>" if spec.get("ping_role_id") else None
                 ok = True
                 for embed in embeds:
                     try:
                         await channel.send(content=content, embed=embed)
                         sent += 1
+                        # getattr's default is evaluated eagerly, so never
+                        # nest another attribute access in it: a channel
+                        # object without .id would raise inside this try and
+                        # mark a successful send as failed.
+                        log.info(
+                            "sent %s to #%s in guild %s",
+                            key,
+                            getattr(channel, "name", None) or getattr(channel, "id", "?"),
+                            guild_id,
+                        )
                     except Exception as exc:  # a bad channel must not stop the loop
-                        print(f"notifier: send failed for {key}: {exc}")
+                        log.error("send failed for %s in guild %s: %s", key, guild_id, exc)
                         ok = False
                 if ok:
                     delivered.append(key)

@@ -7,6 +7,9 @@
 config/guilds/*.json
 config/guilds/*.state.json
 
+# Bot log files
+logs/
+
 # Python bytecode & cache
 __pycache__/
 *.py[cod]
@@ -33,3 +36,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+embed_preview.md

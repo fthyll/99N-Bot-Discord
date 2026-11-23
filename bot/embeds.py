@@ -81,31 +81,54 @@ def player_card(member, profile=None):
     capital = profile.get("clanCapitalContributions")
     builder = profile.get("builderBaseTrophies", member.get("builderBaseTrophies"))
 
+    role = str(member.get("role", "member"))
+    role_mark = {"leader": "👑 ", "coLeader": "⭐ ", "elder": "🔹 "}.get(role, "")
+    level = profile.get("expLevel", member.get("expLevel"))
+
     embed = discord.Embed(
         title=f"🛡️ {member.get('name', 'Unknown')}",
-        description=f"**Tag** `{member.get('tag', '—')}`",
+        description=f"**Tag** `{member.get('tag', '—')}`" + (f"  ·  **Lv** {level}" if level else ""),
         color=GOLD,
     )
-    embed.add_field(name="Town Hall", value=str(th), inline=True)
-    embed.add_field(name="Role", value=str(member.get("role", "member")).title(), inline=True)
+    embed.add_field(name="Town Hall", value=f"🏰 {th}", inline=True)
+    embed.add_field(name="Role", value=f"{role_mark}{role.title()}", inline=True)
     embed.add_field(name="League", value=str((member.get("league") or {}).get("name", "—")), inline=True)
     if trophies is not None:
         value = f"🏆 {trophies:,}"
         if best_trophies:
-            value += f" (best {best_trophies:,})"
+            value += f"\n-# best {best_trophies:,}"
         embed.add_field(name="Trophies", value=value, inline=True)
     if builder is not None:
         embed.add_field(name="Builder Base", value=f"🏠 {builder:,}", inline=True)
     if donations is not None or received is not None:
+        net = (donations or 0) - (received or 0)
         embed.add_field(
             name="Donations",
-            value=f"➕ {donations or 0:,} / ➖ {received or 0:,}",
+            value=f"➕ {donations or 0:,} / ➖ {received or 0:,}\n-# net {net:+,}",
             inline=True,
         )
     if war_stars is not None:
         embed.add_field(name="War Stars", value=f"⭐ {war_stars:,}", inline=True)
     if capital is not None:
         embed.add_field(name="Capital", value=f"🏛 {capital:,}", inline=True)
+
+    # Everything the profile endpoint carries beyond the card's headline stats.
+    # Absent in snapshot mode, so each is added only when present.
+    extra = (
+        ("clanRank", "Clan rank"),
+        ("previousClanRank", "Previous rank"),
+        ("attackWins", "Attack wins"),
+        ("defenseWins", "Defense wins"),
+        ("donationsReceived", "Received"),
+    )
+    for key, label in extra:
+        value = profile.get(key, member.get(key))
+        if value is not None:
+            embed.add_field(name=label, value=str(value), inline=True)
+
+    league_tier = (profile.get("leagueTier") or {}).get("name")
+    if league_tier:
+        embed.add_field(name="League tier", value=str(league_tier), inline=True)
 
     embed.set_thumbnail(url=f"attachment://{filename}")
     embed.set_footer(text="99N War Room · player profile")

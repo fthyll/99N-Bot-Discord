@@ -81,6 +81,46 @@ class TestStandalone(unittest.TestCase):
         self.assertTrue(index)
         self.assertTrue((ROOT / "data" / "clan_stats" / index[0]).exists())
 
+    def test_an_empty_prefix_requests_no_privileged_intents(self):
+        """Slash-only means no Message Content intent, so the bot starts with
+        no Developer Portal toggles. BOT_PREFIX is forced empty because
+        bot_config reads the developer's own .env, which may set a prefix."""
+        code = (
+            "import os; os.environ['BOT_PREFIX'] = '';"
+            "from bot import bot_config;"
+            "assert bot_config.BOT_PREFIX == '', repr(bot_config.BOT_PREFIX);"
+            "import importlib.util as u;"
+            "s = u.spec_from_file_location('entrybot', r'" + str(ROOT / "bot.py") + "');"
+            "m = u.module_from_spec(s); s.loader.exec_module(m);"
+            "i = m.NinetyNineBot().intents;"
+            "print(i.members, i.presences, i.message_content)"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            env={k: v for k, v in os.environ.items() if k != "BOT_PREFIX"}
+            | {"PYTHONPATH": str(ROOT)},
+            capture_output=True, text=True,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip().splitlines()[-1], "False False False")
+
+    def test_prefix_opt_in_restores_message_content(self):
+        """BOT_PREFIX set means the user knows they must enable the intent."""
+        code = (
+            "import os; os.environ['BOT_PREFIX'] = '!';"
+            "import importlib.util as u;"
+            "s = u.spec_from_file_location('entrybot', r'" + str(ROOT / "bot.py") + "');"
+            "m = u.module_from_spec(s); s.loader.exec_module(m);"
+            "print(m.NinetyNineBot().intents.message_content)"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            env={**os.environ, "PYTHONPATH": str(ROOT)},
+            capture_output=True, text=True,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip().splitlines()[-1], "True")
+
 
 if __name__ == "__main__":
     unittest.main()

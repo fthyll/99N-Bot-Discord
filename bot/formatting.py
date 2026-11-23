@@ -72,3 +72,51 @@ def truncate(text, limit=900):
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def bar(value, total, width=12, filled="█", empty="░"):
+    """Unicode progress bar, e.g. ``████████░░░░``.
+
+    Renders inside an embed field where a real chart cannot; the text bar is
+    the only way to show a proportion without shipping an image.
+    """
+    try:
+        value = float(value or 0)
+        total = float(total or 0)
+    except (TypeError, ValueError):
+        return empty * width
+    if total <= 0:
+        return empty * width
+    ratio = max(0.0, min(1.0, value / total))
+    done = int(round(ratio * width))
+    if value > 0 and done == 0:
+        done = 1  # a non-zero value must not render as an empty bar
+    return filled * done + empty * (width - done)
+
+
+def form(results, limit=10, charset=None):
+    """Recent-results string, newest last, e.g. ``🟩🟩🟥🟩``.
+
+    ``results`` is oldest-first; only the tail is shown so the most recent
+    match sits next to the label.
+    """
+    marks = charset or {"win": "🟩", "lose": "🟥", "draw": "🟨", "tie": "🟨"}
+    chars = [marks.get(str(r).lower(), "⬜") for r in results]
+    return "".join(chars[-limit:]) or "—"
+
+
+def pct(part, whole, digits=1):
+    """'62.5%' from a part and a whole; '—' when the whole is zero."""
+    try:
+        part = float(part or 0)
+        whole = float(whole or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if whole <= 0:
+        return "—"
+    return f"{part / whole * 100:.{digits}f}%"
+
+
+def medal(index):
+    """1 -> gold, 2 -> silver, 3 -> bronze, else the plain number."""
+    return {1: "🥇", 2: "🥈", 3: "🥉"}.get(index, f"`{index}.`")

@@ -5,8 +5,7 @@ from discord.ext import commands
 
 from bot import bot_config
 from bot.embeds import GOLD, BLUE, player_card, player_lookup
-from bot.formatting import num, truncate
-from bot.snapshots import SnapshotReader
+from bot.formatting import bar, medal, num, pct, truncate
 
 
 def build_top_embed(rows, metric):
@@ -70,7 +69,7 @@ def build_compare_embed(one, two):
 class PlayerCog(commands.Cog, name="player"):
     def __init__(self, bot):
         self.bot = bot
-        self.reader = SnapshotReader(str(bot_config.DATA_DIR))
+        self.reader = bot_config.build_reader()
 
     @commands.hybrid_command(name="member", description="Player profile with Town Hall image")
     async def member(self, ctx, name_or_tag: str):
@@ -105,12 +104,17 @@ class PlayerCog(commands.Cog, name="player"):
     async def topplayers(self, ctx, metric: str = "warStars", limit: int = 10):
         profiles = self.reader.players()
         rows = sorted(profiles.values(), key=lambda p: p.get(metric) or 0, reverse=True)[:limit]
+        peak = max((int(p.get(metric) or 0) for p in rows), default=0)
         embed = discord.Embed(title=f"🏆 Top by {metric}", color=GOLD)
-        lines = [
-            f"**{i}.** {p.get('name', '?')} `{p.get('tag', '')}` — {num(p.get(metric))}"
-            for i, p in enumerate(rows, 1)
-        ]
+        lines = []
+        for i, p in enumerate(rows, 1):
+            value = int(p.get(metric) or 0)
+            lines.append(
+                f"{medal(i)} **{p.get('name', '?')}** `{p.get('tag', '')}` — {num(value)}\n"
+                f"`{bar(value, peak)}`"
+            )
         embed.description = truncate("\n".join(lines)) or "No data."
+        embed.set_footer(text=f"from {len(profiles)} profiles")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="trend", description="Trend of one player over time")
@@ -141,6 +145,7 @@ class PlayerCog(commands.Cog, name="player"):
     @commands.hybrid_command(name="cwl", description="Clan War League standings")
     async def cwl(self, ctx):
         meta = self.reader.meta()
+        clan_name = (self.reader.clan() or {}).get("name")
         cwl = meta.get("cwl")
         embed = discord.Embed(title="🏆 Clan War League", color=GOLD)
         if not isinstance(cwl, dict) or not cwl:
@@ -150,13 +155,18 @@ class PlayerCog(commands.Cog, name="player"):
         embed.description = f"**State**: {cwl.get('state', '—')}\n**Season**: {cwl.get('season') or '—'}"
         standings = cwl.get("standings") or []
         if standings:
+            peak = max(
+                ((r.get("wins") or 0) * 3 + (r.get("draws") or 0)) for r in standings
+            ) or 1
             lines = []
+            ours = (clan_name or "").lower()
             for row in standings[:20]:
                 points = (row.get("wins") or 0) * 3 + (row.get("draws") or 0)
+                flag = "🔸 " if ours and str(row.get("name", "")).lower() == ours else ""
                 lines.append(
-                    f"**{row.get('position', '?')}.** {row.get('name', '?')} — "
+                    f"{flag}**{row.get('position', '?')}.** {row.get('name', '?')} — "
                     f"{row.get('wins', 0)}W {row.get('draws', 0)}D {row.get('losses', 0)}L "
-                    f"({points} pts)"
+                    f"({points} pts)\n`{bar(points, peak, 10)}`"
                 )
             embed.description += "\n" + truncate("\n".join(lines))
         await ctx.send(embed=embed)
@@ -169,7 +179,9 @@ class PlayerCog(commands.Cog, name="player"):
         if not idle:
             embed.description = "Everyone donated this snapshot."
         else:
-            embed.description = truncate("\n".join(f"**{m.get('name', '?')}**" for m in idle))
+            embed.description = truncate("\n".join(f"🔸 **{m.get('name', '?')}**" for m in idle))
+            embed.add_field(name="Idle", value=f"{len(idle)}/{len(members)}", inline=True)
+            embed.add_field(name="Active", value=pct(len(members) - len(idle), len(members)), inline=True)
         await ctx.send(embed=embed)
 
 

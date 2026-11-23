@@ -14,7 +14,10 @@ from bot import bot_config
 from bot.events import NOTIFY_EVENTS
 
 ROOT = Path(bot_config.BASE_DIR)
-STDLIB_OK = {"asyncio", "copy", "datetime", "json", "os", "sys", "zoneinfo", "pathlib", "re"}
+STDLIB_OK = {
+    "asyncio", "collections", "copy", "datetime", "json", "logging", "os", "sys",
+    "zoneinfo", "pathlib", "re", "time", "urllib", "threading",
+}
 
 
 def _modules():

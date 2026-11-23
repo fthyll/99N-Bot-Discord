@@ -1,13 +1,15 @@
 """Admin commands: configure notifications, broadcast, show config."""
 
+import asyncio
+
 import discord
 from discord.ext import commands
 
 from bot import bot_config
 from bot.config_store import ConfigStore
 from bot.events import GROUP_LABELS, event_keys
+from bot.formatting import truncate
 from bot.notifier import StateStore, build_context, next_state
-from bot.snapshots import SnapshotReader
 
 
 def build_notif_table(config):
@@ -43,7 +45,7 @@ class AdminCog(commands.Cog, name="admin"):
 
     def __init__(self, bot):
         self.bot = bot
-        self.reader = SnapshotReader(str(bot_config.DATA_DIR))
+        self.reader = bot_config.build_reader()
         self.config = ConfigStore(str(bot_config.CONFIG_DIR))
         self.states = StateStore(str(bot_config.CONFIG_DIR))
 
@@ -160,15 +162,82 @@ class AdminCog(commands.Cog, name="admin"):
         embed.description = build_config_summary(config)
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="freshness", description="How old is the data the bot reads")
+    @commands.hybrid_command(name="freshness", description="Where the bot's data comes from and how old it is")
     async def freshness(self, ctx):
-        stamp = self.reader.freshest_stamp()
-        age = self.reader.age_hours(stamp)
+        status = self.reader.status() if hasattr(self.reader, "status") else None
         embed = discord.Embed(title="🕒 Data freshness", color=0x95A5A6)
-        embed.description = (
-            f"**Newest snapshot**: {stamp or 'unknown'}\n"
-            f"**Age**: {age:.1f}h" if age is not None else "**Age**: unknown"
+        if status and status.get("mode") == "live":
+            # Live mode: a "snapshot age" would be meaningless — the data is
+            # fetched from Supercell, not read from a file.
+            lines = [
+                "**Source**: Clash of Clans API (live)",
+                f"**Cache warm**: {'yes' if status.get('ready') else 'warming up'}",
+                f"**Last refresh**: {status.get('last_refresh') or 'pending'}",
+                f"**Refresh every**: {status.get('interval_seconds')}s",
+            ]
+            errors = status.get("errors") or {}
+            if errors:
+                lines.append("**Unavailable**: " + ", ".join(sorted(errors)))
+            embed.description = "\n".join(lines)
+            embed.color = 0x57F287 if not errors else 0xF5B942
+        else:
+            stamp = self.reader.freshest_stamp()
+            age = self.reader.age_hours(stamp)
+            embed.description = (
+                f"**Source**: committed snapshots\n"
+                f"**Newest snapshot**: {stamp or 'unknown'}\n"
+                f"**Age**: {age:.1f}h" if age is not None
+                else f"**Source**: committed snapshots\n**Age**: unknown"
+            )
+            if age is not None and age > bot_config.MAX_SNAPSHOT_AGE_HOURS:
+                embed.color = 0xED4245
+        await ctx.send(embed=embed)
+
+
+    @commands.hybrid_command(name="logs", description="Tail the bot log file (admin)")
+    @commands.has_permissions(manage_guild=True)
+    async def logs(self, ctx, lines: int = 30, level: str = None):
+        """Show the tail of ``logs/bot.log`` without opening a terminal.
+
+        ``level`` filters case-insensitively (e.g. ``error`` or ``warning``);
+        omission shows every line. Runs in a thread so a large file cannot
+        stall the event loop.
+        """
+        from bot.logging_setup import log_dir
+
+        lines = max(1, min(int(lines or 30), 200))
+        path = log_dir() / "bot.log"
+        if not path.exists():
+            await ctx.send(f"No log file yet at `{path}`. File logging may be disabled.")
+            return
+
+        def tail():
+            # ponytail: whole-file read. A rotated log is capped at 5 MB, so
+            # this is bounded by construction; switch to a reverse seek if the
+            # rotation limit ever grows past tens of MB.
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                return fh.readlines()
+
+        try:
+            # The running loop, not ctx.bot.loop: discord.Client.loop raises
+            # AttributeError when read outside a running loop.
+            loop = asyncio.get_running_loop()
+            all_lines = await loop.run_in_executor(None, tail)
+        except OSError as exc:
+            await ctx.send(f"Could not read the log: `{exc}`")
+            return
+
+        if level:
+            wanted = level.strip().upper()
+            all_lines = [l for l in all_lines if f" {wanted} " in l]
+
+        shown = all_lines[-lines:]
+        embed = discord.Embed(
+            title=f"📜 Last {len(shown)} log line(s)" + (f" · {level.upper()}" if level else ""),
+            description=f"```\n{truncate(''.join(shown).strip(), 3800) or '(empty)'}\n```",
+            color=0x5865F2,
         )
+        embed.set_footer(text=str(path))
         await ctx.send(embed=embed)
 
 
