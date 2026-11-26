@@ -107,6 +107,13 @@ class NinetyNineBot(commands.Bot):
             where,
             "slash" if ctx.interaction else "prefix",
         )
+        # Activity-triggered freshness: a command means a human is looking at
+        # the data right now, so nudge the warm thread to refresh ahead of its
+        # timer. The nudge coalesces and refreshes off the loop, so a burst of
+        # commands costs one refresh, not one per command.
+        warmer = getattr(bot_config.build_reader(), "refresh_soon", None)
+        if callable(warmer):
+            warmer()
 
     async def on_command_error(self, ctx, error):
         """Record failures instead of letting them vanish into the console."""

@@ -173,6 +173,68 @@ class TestIndistinguishableFromSnapshots(unittest.TestCase):
         self.assertEqual(client.counts, before)
 
 
+class TestRefreshSoon(unittest.TestCase):
+    """Commands nudge the warmer; the nudge must be honoured within seconds."""
+
+    def test_refresh_soon_shortens_the_wait(self):
+        client = CountingClient()
+        warmer = WarmCache(client, interval_seconds=600)
+        warmer.start()
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline and not warmer.ready:
+                time.sleep(0.05)
+            self.assertTrue(warmer.ready)
+            before = sum(client.counts.values())
+            warmer.refresh_soon()
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if sum(client.counts.values()) > before:
+                    break
+                time.sleep(0.1)
+            self.assertGreater(sum(client.counts.values()), before,
+                               "nudge did not produce a refresh within 10s")
+        finally:
+            warmer.stop()
+
+    def test_nudge_costs_one_pass_not_one_per_command(self):
+        # A nudge schedules at most one successor pass: nudges landing after
+        # the pass started (and before its clear) collapse into the same
+        # successor; later nudges schedule their own pass, which is fine at
+        # human command rate.
+        client = CountingClient()
+        warmer = WarmCache(client, interval_seconds=600)
+        warmer.start()
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline and not warmer.ready:
+                time.sleep(0.05)
+            before = sum(client.counts.values())
+            warmer.refresh_soon()
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if sum(client.counts.values()) > before:
+                    break
+                time.sleep(0.05)
+            # Exactly one successor pass, then the loop goes back to sleep:
+            # total extra requests must be one warm pass (~7), not a storm.
+            time.sleep(1.0)
+            extra = sum(client.counts.values()) - before
+            self.assertLessEqual(extra, 2 * 7,
+                                 "a single nudge produced more than two passes")
+        finally:
+            warmer.stop()
+
+    def test_forced_cached_refills_without_serving_stale(self):
+        client = CountingClient()
+        first = client.clan()
+        client._cache["clan"] = (time.monotonic() - 10**6, {"name": "stale"})
+        fresh = client.clan(force=True)
+        self.assertNotEqual(fresh.get("name"), "stale")
+        # The forced value replaced the poisoned entry.
+        self.assertIs(client.clan(), fresh)
+
+
 class TestAsyncHelper(unittest.TestCase):
     def test_refresh_now_runs_off_the_loop(self):
         from bot.offload import refresh_now

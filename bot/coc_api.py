@@ -133,19 +133,23 @@ class CocClient(SnapshotReader):
             time.sleep(BACKOFF[min(attempt - 1, len(BACKOFF) - 1)])
         raise CocApiError(f"{url} failed after {ATTEMPTS} attempts ({last})")
 
-    def _cached(self, key, fetch):
-        """Memoise ``fetch()`` for ``cache_seconds``. 0 disables the cache.
+    def _cached(self, key, fetch, force=False):
+        """Memoise ``fetch()`` for ``cache_seconds``. 0 disables the TTL.
 
-        Not thread-safe by design: the dispatcher tick is the only concurrent
-        caller and it runs single-threaded, so a lock here would guard nothing.
+        ``force=True`` skips the freshness check but still stores, so a forced
+        refresh refills the cache without ever leaving readers a gap where the
+        cache is empty and a cog would fetch inline.
+
+        Not thread-safe by design: WarmCache serialises its own refreshes, and
+        cog reads that miss only ever write one dict entry, which the GIL
+        makes atomic.
         """
         now = time.monotonic()
         hit = self._cache.get(key)
-        if hit is not None and self.cache_seconds and now - hit[0] < self.cache_seconds:
+        if not force and hit is not None and self.cache_seconds and now - hit[0] < self.cache_seconds:
             return hit[1]
         value = fetch()
-        if self.cache_seconds:
-            self._cache[key] = (time.monotonic(), value)
+        self._cache[key] = (time.monotonic(), value)
         return value
 
     def invalidate(self):
@@ -172,7 +176,7 @@ class CocClient(SnapshotReader):
     def clear_errors(self):
         self.last_errors = {}
 
-    def clan(self):
+    def clan(self, force=False):
         """``/clans/{tag}`` — includes ``memberList``, so this feeds members()."""
 
         def fetch():
@@ -188,13 +192,13 @@ class CocClient(SnapshotReader):
                 return self._fallback("clan", f"HTTP {status}")
             return body if isinstance(body, dict) else {}
 
-        return self._cached("clan", fetch)
+        return self._cached("clan", fetch, force=force)
 
     def members(self):
         clan = self.clan()
         return clan.get("memberList") or clan.get("members") or []
 
-    def war(self):
+    def war(self, force=False):
         """Current war. 404 ``notInWar`` is a normal state, not a failure."""
 
         def fetch():
@@ -210,9 +214,9 @@ class CocClient(SnapshotReader):
             # 403 (private log) and anything else: use the last snapshot.
             return self._fallback("war", f"HTTP {status}")
 
-        return self._cached("war", fetch)
+        return self._cached("war", fetch, force=force)
 
-    def raid(self):
+    def raid(self, force=False):
         """Newest capital raid weekend.
 
         ``/capitalraidseasons`` returns ``items`` newest-first, so the first
@@ -232,9 +236,9 @@ class CocClient(SnapshotReader):
             items = (body or {}).get("items") or []
             return items[0] if items else {}
 
-        return self._cached("raid", fetch)
+        return self._cached("raid", fetch, force=force)
 
-    def warlog(self):
+    def warlog(self, force=False):
         """``items`` from the war log. A private log is 403, not an error page."""
 
         def fetch():
@@ -246,9 +250,9 @@ class CocClient(SnapshotReader):
                 return self._fallback("warlog", f"HTTP {status}")
             return (body or {}).get("items") or []
 
-        return self._cached("warlog", fetch)
+        return self._cached("warlog", fetch, force=force)
 
-    def players(self):
+    def players(self, force=False):
         """Per-player profiles keyed by tag.
 
         One ``/players/{tag}`` per member because the clan payload omits
@@ -282,9 +286,9 @@ class CocClient(SnapshotReader):
                 return self._fallback("players", "no profile lookup succeeded")
             return players
 
-        return self._cached("players", fetch)
+        return self._cached("players", fetch, force=force)
 
-    def meta(self):
+    def meta(self, force=False):
         """The slow-changing context the dashboard shows.
 
         Mirrors the shape ``scrapers/meta_scraper.py`` writes so the ``/cwl``
@@ -322,7 +326,7 @@ class CocClient(SnapshotReader):
             meta["cwl"] = self._cwl(clan)
             return meta
 
-        return self._cached("meta", fetch)
+        return self._cached("meta", fetch, force=force)
 
     # -- CWL ---------------------------------------------------------------
     def _cwl(self, clan):

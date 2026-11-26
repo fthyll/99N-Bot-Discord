@@ -41,6 +41,9 @@ class WarmCache:
         self.client = client
         self.interval = max(30, int(interval_seconds))
         self._stop = threading.Event()
+        # Set when a command asks for fresh data; the warm thread checks it
+        # instead of waiting out the whole interval.
+        self._soon = threading.Event()
         self._thread = None
         self._ready = threading.Event()
         self.last_error = None
@@ -68,9 +71,25 @@ class WarmCache:
 
     def _loop(self):
         while not self._stop.is_set():
+            # Clear BEFORE refreshing: a nudge landing mid-refresh survives
+            # and schedules the next pass. Clearing after would swallow it.
+            self._soon.clear()
             self.refresh_once()
-            # wait() not sleep(): shutdown should not block a whole interval.
-            self._stop.wait(self.interval)
+            # Wait in short slices so a refresh_soon() nudge is honoured
+            # within seconds while _stop stays responsive too.
+            waited = 0.0
+            while waited < self.interval and not self._stop.is_set() and not self._soon.is_set():
+                self._soon.wait(0.5)
+                waited += 0.5
+
+    def refresh_soon(self):
+        """Ask for a refresh ahead of schedule (e.g. after a slash command).
+
+        Coalescing by design: ten commands in a row set the flag ten times and
+        the warm thread still refreshes once. Returns immediately; the caller
+        must not block the event loop on a refresh.
+        """
+        self._soon.set()
 
     def refresh_once(self):
         """One full pass over every warmed endpoint.
@@ -82,6 +101,11 @@ class WarmCache:
         The client swallows API failures and serves the committed snapshot
         instead, recording why in ``client.last_errors`` — so that mapping, not
         the exception, is where a dead token shows up.
+
+        Every read passes ``force=True``: a warm pass that serves the previous
+        pass's TTL cache is a no-op, and the point of warming (or of a
+        refresh_soon nudge) is to refill the cache with data newer than the
+        last pass.
         """
         errors = {}
         try:
@@ -90,7 +114,7 @@ class WarmCache:
             pass
         for name in WARMED:
             try:
-                getattr(self.client, name)()
+                getattr(self.client, name)(force=True)
             except CocApiError as exc:
                 errors[name] = str(exc)
             except Exception as exc:  # never let the thread die

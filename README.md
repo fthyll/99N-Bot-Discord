@@ -14,6 +14,7 @@ Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. B
 - **Ikon notifikasi**: setiap notifikasi membawa gambar WebP kelompoknya (War → Barbarian King, Raid → Goblin, Clan → Archer Queen, System → Lightning Spell) sebagai thumbnail embed. Gambar diambil dari [coc.guide](https://coc.guide) (art dari file game), dikonversi lokal ke WebP, di-commit ke `assets/events/` — embed tidak pernah hotlink ke situs lain. Regen dengan `python3 scripts/fetch_event_icons.py`.
 - **Logging terstruktur**: Konsol + file berputar `logs/bot.log` (5 MB × 3). Perintah `/logs` membaca ekornya dari Discord, dan opsi `LOG_CHANNEL_ID` mencerminkan log ke channel.
 - **Notifikasi Otomatis (14 Event)**: Dispatcher background memeriksa perubahan snapshot dengan anti-spam cerdas (state tersimpan terpisah dari config).
+- **Segar saat dipakai**: data API disegarkan thread latar setiap ~10 menit, dan **setiap pemakaian slash command mendorong penyegaran lebih awal** (coalesce, tanpa memblokir event loop) — jadi menjalankan `/war` atau `/notif panel` menjadikan data yang dilihat command berikutnya lebih baru. `COC_CACHE_SECONDS` mengatur TTL dasar.
 - **Multi-Guild & Quiet Hours**: Konfigurasi per server di `config/guilds/<guild_id>.json` dengan dukungan jam tenang.
 
 ---
@@ -187,7 +188,7 @@ Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid r
 
 ## 🧪 Pengujian
 
-222 unit test memakai stdlib `unittest`:
+225 unit test memakai stdlib `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```
