@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state` suggests on/off; `/notif preset profile` suggests the profiles.
 - **Human labels and one-line help** for all 14 events (`bot/events.py`),
   used by the panel, `/notif list`, and autocomplete.
+- **Notification icons**: every notification embed now carries a WebP thumbnail
+  for its group (War → Barbarian King, Raid → Goblin, Clan → Archer Queen,
+  System → Lightning Spell). Art from [coc.guide](https://coc.guide) game files,
+  converted locally and committed to `assets/events/`; `scripts/fetch_event_icons.py`
+  regenerates the pack and its manifest, and a missing pack sends without art
+  rather than failing.
 - **`/notif set all`** and `event=all` in autocomplete: one action for everything.
 - Verification scripts: `panel_probe.py` (panel structure and persistence),
   `command_probe.py` (subcommand registration and autocomplete bindings),

@@ -20,8 +20,11 @@ import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+import discord
+
 from bot import bot_config
 from bot.config_store import ConfigStore
+from bot.event_icons import icon_path as _group_icon_path
 from bot.events import NOTIFY_EVENTS
 from bot.snapshots import SnapshotReader
 
@@ -261,9 +264,23 @@ class Dispatcher:
                     continue
                 content = f"<@&{spec['ping_role_id']}>" if spec.get("ping_role_id") else None
                 ok = True
-                for embed in embeds:
+                # Attach the group's icon to the first embed so every message
+                # in the batch carries the art. A missing pack simply sends
+                # without it; send() never fails because of a bad asset.
+                group = key.split(".", 1)[0]
+                icon_path = _group_icon_path(group)
+                icon = discord.File(icon_path, filename=icon_path.name) if icon_path else None
+                if icon_path and not embeds[0].thumbnail:
+                    # attachment:// works because the same file rides the
+                    # message; the player card already uses this pattern.
+                    embeds[0].set_thumbnail(url=f"attachment://{icon_path.name}")
+                for i, embed in enumerate(embeds):
                     try:
-                        await channel.send(content=content, embed=embed)
+                        await channel.send(
+                            content=content,
+                            embed=embed,
+                            file=icon if i == 0 else None,
+                        )
                         sent += 1
                         # getattr's default is evaluated eagerly, so never
                         # nest another attribute access in it: a channel

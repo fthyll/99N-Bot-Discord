@@ -11,6 +11,7 @@ Bot Discord untuk Clan **99N** (Clash of Clans) berbasis **discord.py 2.7.1**. B
 - **Slash-only secara default**: Semua 32 perintah (23 top-level + 9 subcommand `/notif`) adalah `hybrid_command`, jadi berjalan sebagai `/` tanpa prefix. `BOT_PREFIX` kosong juga mematikan permintaan privileged intent `message_content` — tidak perlu toggle apa pun di Discord Developer Portal.
 - **Embed kaya**: Badge clan & liga resmi dari payload CoC, progress bar Unicode, rasio (win rate, turnout raid), form strip hasil war (`🟩🟥🟨`), dan medali 🥇🥈🥉 untuk peringkat. Kartu `member`/`th` menampilkan gambar WebP Town Hall 1–19.
 - **Pengaturan notifikasi ramah pemula**: `/notif panel` membuka satu pesan berisi dropdown semua notifikasi (dengan status dan penjelasan kapan ia menyala), tombol nyala/mati, serta picker channel & role bawaan Discord. Tersedia juga `/notif preset` dan autocomplete pada argumen event.
+- **Ikon notifikasi**: setiap notifikasi membawa gambar WebP kelompoknya (War → Barbarian King, Raid → Goblin, Clan → Archer Queen, System → Lightning Spell) sebagai thumbnail embed. Gambar diambil dari [coc.guide](https://coc.guide) (art dari file game), dikonversi lokal ke WebP, di-commit ke `assets/events/` — embed tidak pernah hotlink ke situs lain. Regen dengan `python3 scripts/fetch_event_icons.py`.
 - **Logging terstruktur**: Konsol + file berputar `logs/bot.log` (5 MB × 3). Perintah `/logs` membaca ekornya dari Discord, dan opsi `LOG_CHANNEL_ID` mencerminkan log ke channel.
 - **Notifikasi Otomatis (14 Event)**: Dispatcher background memeriksa perubahan snapshot dengan anti-spam cerdas (state tersimpan terpisah dari config).
 - **Multi-Guild & Quiet Hours**: Konfigurasi per server di `config/guilds/<guild_id>.json` dengan dukungan jam tenang.
@@ -174,6 +175,7 @@ Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid r
 | `bot/embeds.py`, `bot/formatting.py` | Pembangun kartu & helper render (bar, pct, form, medali). |
 | `bot/notifier.py` | Dispatcher 14 event + state anti-spam. |
 | `bot/notif_panel.py` | Panel interaktif `/notif panel` (dropdown, tombol, picker channel/role). |
+| `bot/event_icons.py` | Manifest ikon grup notifikasi (War/Raid/Clan/System) dari `assets/events/`. |
 | `scripts/preview_embeds.py` | Render semua embed dari data nyata ke `embed_preview.md`. |
 | `scripts/preview_panel.py` | Render isi panel notifikasi ke `panel_preview.md`. |
 | `scripts/boot_probe.py` | Uji startup tanpa token (cog, command tree, logging). |
@@ -185,7 +187,7 @@ Nama event yang ditampilkan di UI memakai label manusiawi (`War result`, `Raid r
 
 ## 🧪 Pengujian
 
-215 unit test memakai stdlib `unittest`:
+222 unit test memakai stdlib `unittest`:
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -t .
 ```

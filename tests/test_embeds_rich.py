@@ -429,7 +429,7 @@ class FakeCtx:
         self.sent = []
         self.bot = bot
 
-    async def send(self, content=None, embed=None):
+    async def send(self, content=None, embed=None, file=None):
         self.sent.append((content, embed))
         return None
 

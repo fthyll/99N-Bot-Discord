@@ -26,7 +26,7 @@ class FakeChannel:
     def __init__(self):
         self.sent = []
 
-    async def send(self, content=None, embed=None):
+    async def send(self, content=None, embed=None, file=None):
         self.sent.append((content, embed))
 
 
