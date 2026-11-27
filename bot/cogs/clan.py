@@ -6,6 +6,7 @@ from discord.ext import commands
 from bot import bot_config
 from bot.embeds import BLUE, GREEN, GREY, RED, GOLD
 from bot.formatting import bar, medal, num, pct, truncate
+from bot.offload import live_read
 
 
 def find_member(members, query):
@@ -134,7 +135,8 @@ class ClanCog(commands.Cog, name="clan"):
 
     @commands.hybrid_command(name="clan", description="Clan overview card")
     async def clan(self, ctx):
-        await ctx.send(embed=build_clan_embed(self.reader.clan()))
+        await ctx.defer()
+        await ctx.send(embed=build_clan_embed(await live_read(self.reader, "clan")))
 
     @commands.hybrid_command(name="roster", description="Clan roster with filters")
     async def roster(
@@ -144,7 +146,8 @@ class ClanCog(commands.Cog, name="clan"):
         sort: str = None,
         limit: int = 50,
     ):
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         key = {"donations": "donations", "trophies": "trophies"}.get(
             (sort or "").lower(), None
         )
@@ -168,7 +171,8 @@ class ClanCog(commands.Cog, name="clan"):
                 f"❌ Unknown metric `{metric}`. Pick one of: {', '.join(METRICS)}."
             )
             return
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         rows = top_rows(members, metric, limit=limit)
         peak = max((int(m.get(metric) or 0) for m in rows), default=0)
         lines = []

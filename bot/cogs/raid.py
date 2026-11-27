@@ -6,6 +6,7 @@ from discord.ext import commands
 from bot import bot_config
 from bot.embeds import GOLD, RED
 from bot.formatting import bar, coc_time, duration_text, hours_until, medal, num, pct, truncate
+from bot.offload import live_read
 
 
 def raid_member_rows(raid):
@@ -167,15 +168,22 @@ class RaidCog(commands.Cog, name="raid"):
 
     @commands.hybrid_command(name="raid", description="Capital raid weekend summary")
     async def raid(self, ctx):
-        await ctx.send(embed=build_raid_embed(self.reader.raid()))
+        await ctx.defer()
+        await ctx.send(embed=build_raid_embed(await live_read(self.reader, "raid")))
 
     @commands.hybrid_command(name="raidmembers", description="Per-member raid attacks and loot")
     async def raidmembers(self, ctx):
-        await ctx.send(embed=build_raid_members_embed(self.reader.raid(), self.reader.members()))
+        await ctx.defer()
+        raid = await live_read(self.reader, "raid")
+        members = await live_read(self.reader, "members")
+        await ctx.send(embed=build_raid_members_embed(raid, members))
 
     @commands.hybrid_command(name="raidabsent", description="Members who made no raid attack")
     async def raidabsent(self, ctx):
-        await ctx.send(embed=build_absentees_embed(self.reader.raid(), self.reader.members()))
+        await ctx.defer()
+        raid = await live_read(self.reader, "raid")
+        members = await live_read(self.reader, "members")
+        await ctx.send(embed=build_absentees_embed(raid, members))
 
 
 async def setup(bot):

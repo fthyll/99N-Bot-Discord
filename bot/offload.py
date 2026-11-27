@@ -147,6 +147,58 @@ async def refresh_now(warmer):
     return await asyncio.to_thread(warmer.refresh_once)
 
 
+async def live_read(reader, method_name, *args, **kwargs):
+    """Call ``reader.<method_name>(*args, force=True)`` off the event loop.
+
+    Used by slash commands when real-time data is wanted: runs the blocking
+    HTTP call in ``asyncio.to_thread`` so the gateway heartbeat stays responsive
+    even on slow endpoints like ``players()`` (~50 requests), while bypassing
+    the TTL cache so the caller always receives fresh Supercell data (which
+    ``CocClient._cached`` also stores for the dispatcher).
+
+    Degrades transparently when ``reader`` is a ``SnapshotReader`` (no
+    ``force`` parameter, local file I/O) or a ``WarmCache`` (forwards to the
+    underlying ``CocClient``).
+    """
+    target = getattr(reader, "client", reader)
+    fn = getattr(target, method_name)
+    # Only CocClient network endpoints accept force=True; SnapshotReader and
+    # local helpers like trends()/age_hours() do not.
+    if isinstance(target, CocClient) and method_name in (*WARMED, "members"):
+        return await asyncio.to_thread(fn, *args, force=True, **kwargs)
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
+async def live_context(reader, state, event_key=None):
+    """Build a fresh notification context off the event loop.
+
+    Only fetches the endpoint needed by ``event_key`` (``war``, ``raid``,
+    ``clan``, or ``meta`` for ``cwl.*``) rather than pulling every endpoint
+    including ``players()``, keeping ``/notif test`` and panel samples fast.
+    """
+    from datetime import datetime, timezone
+
+    group = (event_key or "").split(".", 1)[0]
+    needed = {
+        "war": ("war",),
+        "raid": ("raid", "clan"),
+        "clan": ("clan",),
+        "cwl": ("meta", "clan"),
+    }.get(group, ("war", "raid", "clan", "meta"))
+
+    results = await asyncio.gather(*(live_read(reader, m) for m in needed))
+    data = dict(zip(needed, results))
+    return {
+        "war": data.get("war", {}),
+        "raid": data.get("raid", {}),
+        "clan": data.get("clan", {}),
+        "meta": data.get("meta", {}),
+        "reader": reader,
+        "now": datetime.now(timezone.utc),
+        "prev": state or {},
+    }
+
+
 def build_warm_cache(data_dir, token, clan_tag, base_url=None,
                      cache_seconds=600, interval_seconds=None):
     """``CocClient`` inside a ``WarmCache``, ready to ``start()``."""

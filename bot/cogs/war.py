@@ -6,6 +6,7 @@ from discord.ext import commands
 from bot import bot_config
 from bot.embeds import BLUE, GREEN, GREY, RED, GOLD
 from bot.formatting import bar, coc_time, duration_text, form, hours_until, num, pct, truncate
+from bot.offload import live_read
 
 STATE_COLORS = {
     "preparation": BLUE,
@@ -263,26 +264,31 @@ class WarCog(commands.Cog, name="war"):
 
     @commands.hybrid_command(name="war", description="Status of the current or last war")
     async def war(self, ctx):
-        embed = build_war_embed(self.reader.war())
+        await ctx.defer()
+        embed = build_war_embed(await live_read(self.reader, "war"))
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="attacks", description="Who still has attacks left")
     async def attacks(self, ctx):
-        await ctx.send(embed=build_attack_embed(self.reader.war()))
+        await ctx.defer()
+        await ctx.send(embed=build_attack_embed(await live_read(self.reader, "war")))
 
     @commands.hybrid_command(name="lineup", description="Lineup by map position")
     async def lineup(self, ctx):
-        await ctx.send(embed=build_lineup_embed(self.reader.war()))
+        await ctx.defer()
+        await ctx.send(embed=build_lineup_embed(await live_read(self.reader, "war")))
 
     @commands.hybrid_command(name="warlog", description="Recent war results")
     @commands.cooldown(1, 5.0)
     async def warlog(self, ctx, count: int = 10):
-        items = self.reader.warlog()
+        await ctx.defer()
+        items = await live_read(self.reader, "warlog")
         await ctx.send(embed=build_warlog_embed(items, max(1, min(count, 25))))
 
     @commands.hybrid_command(name="warstats", description="Win rate, streak and average stars")
     async def warstats(self, ctx):
-        await ctx.send(embed=build_warstats_embed(self.reader.warlog()))
+        await ctx.defer()
+        await ctx.send(embed=build_warstats_embed(await live_read(self.reader, "warlog")))
 
 
 async def setup(bot):

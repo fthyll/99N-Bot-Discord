@@ -194,8 +194,8 @@ class CocClient(SnapshotReader):
 
         return self._cached("clan", fetch, force=force)
 
-    def members(self):
-        clan = self.clan()
+    def members(self, force=False):
+        clan = self.clan(force=force)
         return clan.get("memberList") or clan.get("members") or []
 
     def war(self, force=False):
@@ -252,6 +252,22 @@ class CocClient(SnapshotReader):
 
         return self._cached("warlog", fetch, force=force)
 
+    def player(self, tag):
+        """Fetch a single player profile live (1 request instead of 50)."""
+        if not tag:
+            return {}
+        try:
+            status, body = self._get(
+                f"/players/{urllib.parse.quote(str(tag).lstrip('#'))}"
+            )
+        except CocApiError:
+            snap = self._fallback("players", "unreachable")
+            return snap.get(tag) if isinstance(snap, dict) else {}
+        if status == 200 and isinstance(body, dict):
+            return body
+        snap = self._fallback("players", f"HTTP {status}")
+        return snap.get(tag) if isinstance(snap, dict) else {}
+
     def players(self, force=False):
         """Per-player profiles keyed by tag.
 
@@ -262,7 +278,7 @@ class CocClient(SnapshotReader):
         """
 
         def fetch():
-            roster = self.members()
+            roster = self.members(force=force)
             if self.player_limit is not None:
                 roster = roster[: self.player_limit]
             players = {}
@@ -311,7 +327,7 @@ class CocClient(SnapshotReader):
             except CocApiError:
                 pass
 
-            clan = self.clan()
+            clan = self.clan(force=force)
             location = clan.get("location") or {}
             meta["countryRank"] = {
                 "locationId": location.get("id"),

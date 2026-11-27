@@ -274,9 +274,11 @@ class AdminCog(commands.Cog, name="admin"):
             await ctx.send(f"❌ Unknown event `{event}`. Use `/notif list` or type to autocomplete.")
             return
         from bot.events import NOTIFY_EVENTS
+        from bot.offload import live_context
 
+        await ctx.defer()
         state = self.states.get(ctx.guild.id)
-        ctx_data = build_context(self.reader, state)
+        ctx_data = await live_context(self.reader, state, event)
         # Force the trigger to produce something by clearing its marker.
         embeds = NOTIFY_EVENTS[event](ctx_data, {})
         if not embeds:

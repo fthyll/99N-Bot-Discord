@@ -143,14 +143,15 @@ class NotifPanel(ui.View):
                 ephemeral=True,
             )
             return
-        from bot.notifier import build_context, StateStore
+        from bot.notifier import StateStore
         from bot.events import NOTIFY_EVENTS
+        from bot.offload import live_context
         from bot import bot_config
 
+        await interaction.response.defer(ephemeral=True)
         states = StateStore(str(bot_config.CONFIG_DIR))
         reader = bot_config.build_reader()
-        ctx_data = build_context(reader, states.get(self.guild_id))
-        await interaction.response.defer(ephemeral=True)
+        ctx_data = await live_context(reader, states.get(self.guild_id), self.selected)
 
         embeds = NOTIFY_EVENTS[self.selected](ctx_data, {})
         if not embeds:

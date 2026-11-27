@@ -3,9 +3,12 @@
 import discord
 from discord.ext import commands
 
+import asyncio
+
 from bot import bot_config
 from bot.embeds import GOLD, BLUE, player_card, player_lookup
 from bot.formatting import bar, medal, num, pct, truncate
+from bot.offload import live_read
 
 
 def build_top_embed(rows, metric):
@@ -71,15 +74,25 @@ class PlayerCog(commands.Cog, name="player"):
         self.bot = bot
         self.reader = bot_config.build_reader()
 
+    async def _fetch_profile(self, tag) -> dict:
+        """Fetch one player profile live if supported, else fall back to players()."""
+        target = getattr(self.reader, "client", self.reader)
+        player_fn = getattr(target, "player", None)
+        if callable(player_fn):
+            res = await asyncio.to_thread(player_fn, tag)
+            return res if isinstance(res, dict) else {}
+        profiles = await live_read(self.reader, "players")
+        return profiles.get(tag) or {}
+
     @commands.hybrid_command(name="member", description="Player profile with Town Hall image")
     async def member(self, ctx, name_or_tag: str):
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         target = player_lookup(members, name_or_tag)
         if not target:
             await ctx.send(f"❌ No clan member matching `{name_or_tag}`.")
             return
-        profiles = self.reader.players()
-        profile = profiles.get(target.get("tag")) or {}
+        profile = await self._fetch_profile(target.get("tag"))
         embed, filename = player_card(target, profile)
         path = bot_config.th_asset(target.get("townHallLevel"))
         if path:
@@ -102,7 +115,8 @@ class PlayerCog(commands.Cog, name="player"):
 
     @commands.hybrid_command(name="topplayers", description="Top players by war stars or capital")
     async def topplayers(self, ctx, metric: str = "warStars", limit: int = 10):
-        profiles = self.reader.players()
+        await ctx.defer()
+        profiles = await live_read(self.reader, "players")
         rows = sorted(profiles.values(), key=lambda p: p.get(metric) or 0, reverse=True)[:limit]
         peak = max((int(p.get(metric) or 0) for p in rows), default=0)
         embed = discord.Embed(title=f"🏆 Top by {metric}", color=GOLD)
@@ -119,7 +133,8 @@ class PlayerCog(commands.Cog, name="player"):
 
     @commands.hybrid_command(name="trend", description="Trend of one player over time")
     async def trend(self, ctx, name_or_tag: str, metric: str = "trophies"):
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         target = player_lookup(members, name_or_tag)
         if not target:
             await ctx.send(f"❌ No clan member matching `{name_or_tag}`.")
@@ -130,22 +145,27 @@ class PlayerCog(commands.Cog, name="player"):
 
     @commands.hybrid_command(name="compare", description="Compare two players")
     async def compare(self, ctx, first: str, second: str):
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         one = player_lookup(members, first)
         two = player_lookup(members, second)
         if not one or not two:
             await ctx.send("❌ Both names must match a clan member.")
             return
-        profiles = self.reader.players()
+        prof_one, prof_two = await asyncio.gather(
+            self._fetch_profile(one.get("tag")),
+            self._fetch_profile(two.get("tag")),
+        )
         await ctx.send(embed=build_compare_embed(
-            {**one, **(profiles.get(one.get("tag")) or {})},
-            {**two, **(profiles.get(two.get("tag")) or {})},
+            {**one, **prof_one},
+            {**two, **prof_two},
         ))
 
     @commands.hybrid_command(name="cwl", description="Clan War League standings")
     async def cwl(self, ctx):
-        meta = self.reader.meta()
-        clan_name = (self.reader.clan() or {}).get("name")
+        await ctx.defer()
+        meta = await live_read(self.reader, "meta")
+        clan_name = (await live_read(self.reader, "clan") or {}).get("name")
         cwl = meta.get("cwl")
         embed = discord.Embed(title="🏆 Clan War League", color=GOLD)
         if not isinstance(cwl, dict) or not cwl:
@@ -173,7 +193,8 @@ class PlayerCog(commands.Cog, name="player"):
 
     @commands.hybrid_command(name="inactive", description="Members with no donations")
     async def inactive(self, ctx):
-        members = self.reader.members()
+        await ctx.defer()
+        members = await live_read(self.reader, "members")
         idle = [m for m in members if int(m.get("donations") or 0) == 0]
         embed = discord.Embed(title="💤 Inactive members", color=0x95A5A6)
         if not idle:

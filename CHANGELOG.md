@@ -28,12 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   converted locally and committed to `assets/events/`; `scripts/fetch_event_icons.py`
   regenerates the pack and its manifest, and a missing pack sends without art
   rather than failing.
-- **Activity-driven freshness**: every slash command now nudges the warm-cache
-  thread to refresh the CoC API data ahead of its timer (`WarmCache.refresh_soon`).
-  The nudge coalesces and refreshes off the event loop, so a burst of commands
-  costs one refresh — commands read data that is seconds old instead of up to
-  ten minutes old when the clan is active. Warm passes now fetch with
-  ``force=True`` so a pass can never serve the previous pass's cache.
+- **Real-time on every slash command**: data commands (`/war`, `/attacks`,
+  `/lineup`, `/warlog`, `/warstats`, `/clan`, `/roster`, `/top`, `/raid`,
+  `/raidmembers`, `/raidabsent`, `/member`, `/topplayers`, `/trend`, `/compare`,
+  `/cwl`, `/inactive`, `/notif test`, and the panel sample button) now defer
+  and fetch directly from the Clash of Clans API via `live_read()` /
+  `live_context()` in `asyncio.to_thread(..., force=True)` before replying,
+  so every response reflects live game state without stalling the Discord
+  event loop.
+- **Single-player API lookup**: `CocClient.player(tag)` lets `/member` and
+  `/compare` fetch 1–2 player profiles instead of all 50.
 - **`/notif set all`** and `event=all` in autocomplete: one action for everything.
 - Verification scripts: `panel_probe.py` (panel structure and persistence),
   `command_probe.py` (subcommand registration and autocomplete bindings),

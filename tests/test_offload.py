@@ -31,7 +31,7 @@ class CountingClient(CocClient):
         self.counts[path] = self.counts.get(path, 0) + 1
         if any(f in path for f in self.fail):
             raise CocApiError(f"stubbed failure for {path}")
-        if "members" in path or path.count("/") == 2:
+        if "members" in path or (path.startswith("/clans/") and path.count("/") == 2):
             return 200, {"tag": "#2J0YP2LQL", "name": "99N",
                          "memberList": [{"tag": "#A", "name": "Alpha"}]}
         if "currentwar" in path and "leaguegroup" not in path:
@@ -248,6 +248,81 @@ class TestAsyncHelper(unittest.TestCase):
         errors = asyncio.run(go())
         self.assertEqual(errors, {})
         self.assertTrue(warmer.ready)
+
+    def test_live_read_bypasses_ttl_cache_on_warmer(self):
+        from bot.offload import live_read
+
+        client = CountingClient()
+        warmer = WarmCache(client, interval_seconds=600)
+        # Prime the TTL cache, then prove live_read hits _get anyway.
+        warmer.refresh_once()
+        before = client.counts.get("/clans/2J0YP2LQL", 0)
+
+        async def go():
+            return await live_read(warmer, "clan")
+
+        clan = asyncio.run(go())
+        self.assertEqual(clan["name"], "99N")
+        self.assertEqual(client.counts.get("/clans/2J0YP2LQL", 0), before + 1)
+
+    def test_live_read_works_with_snapshot_reader(self):
+        from bot.offload import live_read
+
+        snap = SnapshotReader("/tmp")
+        # Empty tmp dir returns {}, never passes force=True to SnapshotReader.
+        result = asyncio.run(live_read(snap, "clan"))
+        self.assertEqual(result, {})
+
+    def test_live_context_fetches_only_needed_group_endpoint(self):
+        from bot.offload import live_context
+
+        client = CountingClient()
+        warmer = WarmCache(client, interval_seconds=600)
+
+        ctx = asyncio.run(live_context(warmer, {}, "war.result"))
+        self.assertIn("/clans/2J0YP2LQL/currentwar", client.counts)
+        self.assertFalse(any("/players/" in p for p in client.counts),
+                         "war preview must not pull 50 player profiles")
+        self.assertIn("war", ctx)
+
+    def test_single_player_hits_one_endpoint_not_fifty(self):
+        client = CountingClient()
+        prof = client.player("#A")
+        self.assertIsInstance(prof, dict)
+        self.assertEqual(prof["name"], "Alpha")
+        self.assertEqual(client.counts, {"/players/A": 1})
+
+    def test_war_cog_command_fetches_fresh_on_invocation(self):
+        from typing import Any, cast
+        from bot.cogs.war import WarCog
+
+        client = CountingClient()
+        warmer = WarmCache(client, interval_seconds=600)
+        warmer.refresh_once()
+        before = client.counts.get("/clans/2J0YP2LQL/currentwar", 0)
+
+        class FakeBot:
+            pass
+
+        class FakeCtx:
+            def __init__(self):
+                self.deferred = False
+                self.sent = []
+
+            async def defer(self):
+                self.deferred = True
+
+            async def send(self, content=None, embed=None, file=None):
+                self.sent.append((content, embed, file))
+
+        cog = WarCog(FakeBot())
+        cog.reader = warmer
+        ctx = FakeCtx()
+        cb: Any = cog.war.callback
+        asyncio.run(cb(cog, cast(Any, ctx)))
+        self.assertTrue(ctx.deferred)
+        self.assertEqual(len(ctx.sent), 1)
+        self.assertEqual(client.counts.get("/clans/2J0YP2LQL/currentwar", 0), before + 1)
 
 
 if __name__ == "__main__":
